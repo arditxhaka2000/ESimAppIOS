@@ -1,23 +1,18 @@
 {
-  "name": "esimapp",
-  "version": "1.0.0",
-  "main": "index.ts",
-  "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
-  },
   "dependencies": {
-    "expo": "~53.0.22",
-    "expo-status-bar": "~2.2.3",
+    "expo": "53.0.22",
     "react": "19.0.0",
-    "react-native": "0.79.6"
-  },
-  "devDependencies": {
-    "@babel/core": "^7.25.2",
-    "@types/react": "~19.0.10",
-    "typescript": "~5.8.3"
-  },
-  "private": true
+    "react-native": "0.79.5",
+    "@react-navigation/native": "^6.1.9",
+    "@react-navigation/bottom-tabs": "^6.5.11",
+    "@react-navigation/stack": "^6.3.20",
+    "expo-secure-store": "~14.2.4",
+    "expo-device": "~7.1.4",
+    "@expo/vector-icons": "^14.1.0",
+    "axios": "^1.6.0",
+    "@react-native-async-storage/async-storage": "2.1.2",
+    "expo-constants": "~17.1.7",
+    "typescript": "~5.8.3",
+    "@types/react": "~19.0.10"
+  }
 }
