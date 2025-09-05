@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useApi } from '../context/ApiContext';
 import CountriesModal from '../components/CountriesModal';
+import PaymentModal from '../components/PaymentModal';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -40,6 +41,8 @@ const HomeScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [coverageModalVisible, setCoverageModalVisible] = useState(false);
   const [selectedPackageCountries, setSelectedPackageCountries] = useState(null);
+  const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+  const [selectedPackageForPurchase, setSelectedPackageForPurchase] = useState(null);
 
   const promoBanners = [
     {
@@ -147,38 +150,40 @@ const HomeScreen = ({ navigation }) => {
     Alert.alert('Login', 'Login functionality');
   };
 
-  const handlePackagePurchase = async (packageItem) => {
-    try {
-      const confirmed = await new Promise((resolve) => {
-        Alert.alert(
-          'Confirm Purchase',
-          `Purchase ${packageItem.name} for ${packageItem.display_price || packageItem.price}?`,
-          [
-            { text: 'Anulo', onPress: () => resolve(false) },
-            { text: 'Blej tani', onPress: () => resolve(true) },
-          ]
-        );
-      });
-
-      if (!confirmed) return;
-
-      let result;
-      if (packageItem.package_type === 'DATA-ONLY') {
-        result = await purchaseDataOnlyPackage(packageItem.id);
-      } else {
-        result = await purchasePackage(packageItem.id);
-      }
-
-      if (result.success) {
-        Alert.alert('Success', 'Package purchased successfully!');
-      } else {
-        Alert.alert('Error', 'Failed to purchase package. Please try again.');
-      }
-    } catch (error) {
-      Alert.alert('Error', `Purchase failed: ${error.message}`);
-    }
+  const handlePackagePurchase = (packageItem) => {
+    setSelectedPackageForPurchase(packageItem);
+    setPaymentModalVisible(true);
   };
+  const handlePurchaseWithCustomerData = async (packageItem, customerData) => {
+  try {
+    let result;
+    if (packageItem.package_type === 'DATA-ONLY') {
+      result = await purchaseDataOnlyPackage(packageItem.id);
+    } else {
+      result = await purchasePackage(packageItem.id);
+    }
 
+    if (result.success) {
+      // Store customer data locally for tracking
+      await SecureStorageService.setAsync(
+        `purchase_${Date.now()}`, 
+        JSON.stringify({
+          ...customerData,
+          package: packageItem,
+          purchaseDate: new Date().toISOString(),
+          esimData: result.data
+        })
+      );
+      
+      setPaymentModalVisible(false);
+      Alert.alert('Success', `Package purchased successfully! eSIM details will be sent to ${customerData.email}`);
+    } else {
+      Alert.alert('Error', 'Failed to purchase package. Please try again.');
+    }
+  } catch (error) {
+    Alert.alert('Error', `Purchase failed: ${error.message}`);
+  }
+};
   const handleCountrySelect = (country) => {
     navigation.navigate('CountryPackages', { country });
   };
@@ -393,7 +398,13 @@ const HomeScreen = ({ navigation }) => {
         visible={coverageModalVisible}
         countries={selectedPackageCountries}
         onClose={() => setCoverageModalVisible(false)}
-/>
+      />
+      <PaymentModal
+        visible={paymentModalVisible}
+        package={selectedPackageForPurchase}
+        onClose={() => setPaymentModalVisible(false)}
+        onPurchase={handlePurchaseWithCustomerData}
+      />
     </View>
   );
 };
