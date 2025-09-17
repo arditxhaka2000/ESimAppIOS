@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { MaterialIcons as Icon } from '@expo/vector-icons';
 import { StatusBar, StyleSheet } from 'react-native';
+import { StripeProvider } from '@stripe/stripe-react-native';
 
 // Services
 import { AuthService } from './src/services/AuthService';
@@ -124,18 +125,20 @@ const App = () => {
   }
 
   return (
-    <AuthProvider>
-      <ApiProvider>
-        <NavigationContainer>
-          <StatusBar 
-            barStyle="light-content" 
-            backgroundColor="#dc2626" 
-            translucent={false}
-          />
-          <TabNavigator />
-        </NavigationContainer>
-      </ApiProvider>
-    </AuthProvider>
+    <StripeProvider publishableKey="pk_test_51S8H6yAONcgDIAVQ3Lci5NSm3PEJ3q8aoGUNJ2k7Nhp1T3D4yNEq6NbEgriJGU2yDQWEl6OfRhrmwPZcHgjbauGv00rpxbTeUT">
+      <AuthProvider>
+        <ApiProvider>
+          <NavigationContainer>
+            <StatusBar 
+              barStyle="light-content" 
+              backgroundColor="#dc2626" 
+              translucent={false}
+            />
+            <TabNavigator />
+          </NavigationContainer>
+        </ApiProvider>
+      </AuthProvider>
+    </StripeProvider>
   );
 };
 

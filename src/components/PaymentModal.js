@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,33 +11,32 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons as Icon } from '@expo/vector-icons';
+import { CardField, useStripe } from '@stripe/stripe-react-native';
+import { SupabaseService } from '../services/SupabaseService';
 
 const PaymentModal = ({ 
   visible, 
   package: selectedPackage, 
   onClose, 
-  onPurchase 
+  onPurchaseSuccess 
 }) => {
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card');
-
+  const [cardComplete, setCardComplete] = useState(false);
+  const [cardDetails, setCardDetails] = useState({});
+  const [processingStep, setProcessingStep] = useState('');
+  
+  const stripe = useStripe();
+  const supabaseService = SupabaseService.getInstance();
+  
   const handlePurchase = async () => {
-    if (!customerEmail.trim()) {
-      Alert.alert('Error', 'Please enter your email address');
-      return;
-    }
-
-    if (!customerName.trim()) {
-      Alert.alert('Error', 'Please enter your name');
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(customerEmail)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+    console.log('Purchase button clicked');
+    if (!validateForm()) return;
+    if (!stripe) {
+      Alert.alert('Error', 'Stripe is not ready. Please try again.');
       return;
     }
 
@@ -45,36 +44,200 @@ const PaymentModal = ({
     
     try {
       const customerData = {
-        email: customerEmail,
-        name: customerName,
-        phone: customerPhone,
-        paymentMethod: selectedPaymentMethod,
+        email: customerEmail.trim(),
+        name: customerName.trim(),
+        phone: customerPhone.trim(),
       };
 
-      await onPurchase(selectedPackage, customerData);
+      // Step 1: Create payment intent via Supabase Edge Function
+      setProcessingStep('Creating payment intent...');
+      const paymentIntentResult = await supabaseService.createPaymentIntent(
+        Math.round(parseFloat(selectedPackage.price) * 100), // Convert to cents
+        'usd',
+        customerData,
+        selectedPackage.id, // package_id
+        selectedPackage.name // package_name
+      );
       
-      // Clear form
-      setCustomerEmail('');
-      setCustomerName('');
-      setCustomerPhone('');
+      if (!paymentIntentResult.success) {
+        console.error('Payment intent creation failed:', paymentIntentResult.error);
+        Alert.alert('Payment Error', paymentIntentResult.error || 'Failed to create payment intent');
+        return;
+      }
+
+      console.log('Payment intent created successfully');
+
+      // Step 2: Confirm payment with Stripe
+      setProcessingStep('Processing payment...');
+      const { error, paymentIntent } = await stripe.confirmPayment(
+        paymentIntentResult.client_secret,
+        {
+          paymentMethodType: 'Card',
+          paymentMethodData: {
+            billingDetails: {
+              email: customerData.email,
+              name: customerData.name,
+              phone: customerData.phone || undefined,
+            },
+          },
+        }
+      );
+
+      if (error) {
+        console.error('Stripe payment error:', error);
+        Alert.alert('Payment Failed', error.message || 'Payment processing failed');
+        return;
+      }
+
+      console.log('Payment confirmed, status:', paymentIntent.status);
+
+      if (paymentIntent.status === 'succeeded') {
+        // Step 3: Purchase eSIM after successful payment
+        await handleESimPurchase(customerData, paymentIntent.id);
+      } else {
+        Alert.alert('Payment Error', `Payment status: ${paymentIntent.status}`);
+      }
       
     } catch (error) {
-      Alert.alert('Error', 'Purchase failed. Please try again.');
+      console.error('Purchase error:', error);
+      Alert.alert('Error', error.message || 'Purchase failed. Please try again.');
     } finally {
       setIsProcessing(false);
+      setProcessingStep('');
     }
   };
 
-  const PaymentMethodOption = ({ method, title, icon, selected, onSelect }) => (
+  const handleESimPurchase = async (customerData, paymentId) => {
+    try {
+      // Step 3: Purchase eSIM via Supabase Edge Function
+      setProcessingStep('Activating eSIM...');
+      const esimResult = await supabaseService.purchaseESimPackage(
+        selectedPackage.id,
+        customerData,
+        paymentId
+      );
+
+      if (esimResult.success) {
+        // Step 4: Update the purchase record with eSIM data
+        setProcessingStep('Finalizing purchase...');
+        
+        // Update the existing purchase record with eSIM data
+        const updateResult = await supabaseService.updatePurchaseWithESimData(
+          paymentId,
+          esimResult.data
+        );
+
+        if (updateResult.success || !updateResult.success) {
+          // Show success even if update fails (eSIM was still activated)
+          Alert.alert(
+            'Purchase Successful!',
+            `Your eSIM package has been activated successfully!\n\neSIM details have been sent to ${customerData.email}\n\nICCID: ${esimResult.data?.iccid || 'Will be provided via email'}`,
+            [{ text: 'OK', onPress: clearFormAndClose }]
+          );
+
+          // Call success callback if provided
+          if (onPurchaseSuccess) {
+            onPurchaseSuccess(esimResult.data, customerData);
+          }
+        }
+
+      } else {
+        // Payment successful but eSIM purchase failed - initiate refund
+        Alert.alert(
+          'eSIM Activation Failed',
+          'Your payment was successful but eSIM activation failed. We will process a refund within 24 hours. Please contact support if you need immediate assistance.',
+          [{ text: 'OK', onPress: clearFormAndClose }]
+        );
+
+        // Initiate refund via Supabase
+        try {
+          await supabaseService.refundPayment(paymentId, 'eSIM activation failed');
+        } catch (refundError) {
+          console.error('Refund initiation failed:', refundError);
+          // Still proceed - the refund can be processed manually
+        }
+      }
+
+    } catch (error) {
+      console.error('eSIM purchase error:', error);
+      
+      Alert.alert(
+        'Purchase Error',
+        'Payment was processed but eSIM activation failed. We will process a refund within 24 hours. Please contact support for assistance.',
+        [{ text: 'OK', onPress: clearFormAndClose }]
+      );
+      
+      // Initiate refund
+      try {
+        await supabaseService.refundPayment(paymentId, 'eSIM activation error: ' + error.message);
+      } catch (refundError) {
+        console.error('Refund initiation failed:', refundError);
+      }
+    }
+  };
+
+  const validateForm = () => {
+    console.log('Validating form...');
+    if (!customerEmail.trim()) {
+      console.log('Email validation failed');
+      Alert.alert('Error', 'Please enter your email address');
+      return false;
+    }
+
+    if (!customerName.trim()) {
+      console.log('Name validation failed');
+      Alert.alert('Error', 'Please enter your name');
+      return false;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(customerEmail.trim())) {
+      console.log('Email format validation failed');
+      Alert.alert('Error', 'Please enter a valid email address');
+      return false;
+    }
+
+    if (selectedPaymentMethod === 'card') {
+      if (!cardComplete || !cardDetails.complete) {
+        Alert.alert('Error', 'Please complete your card details');
+        return false;
+      }
+    }
+
+    console.log('Form validation passed');
+    return true;
+  };
+
+  const clearFormAndClose = () => {
+    setCustomerEmail('');
+    setCustomerName('');
+    setCustomerPhone('');
+    setCardComplete(false);
+    setCardDetails({});
+    setSelectedPaymentMethod('card');
+    setProcessingStep('');
+    onClose();
+  };
+
+  const PaymentMethodOption = ({ method, title, icon, selected, onSelect, disabled = false }) => (
     <TouchableOpacity 
-      style={[styles.paymentOption, selected && styles.selectedPaymentOption]}
-      onPress={() => onSelect(method)}
+      style={[
+        styles.paymentOption, 
+        selected && styles.selectedPaymentOption,
+        disabled && styles.disabledPaymentOption
+      ]}
+      onPress={() => !disabled && onSelect(method)}
+      disabled={disabled}
     >
-      <Icon name={icon} size={24} color={selected ? '#dc2626' : '#6b7280'} />
-      <Text style={[styles.paymentText, selected && styles.selectedPaymentText]}>
-        {title}
+      <Icon name={icon} size={24} color={disabled ? '#d1d5db' : (selected ? '#dc2626' : '#6b7280')} />
+      <Text style={[
+        styles.paymentText, 
+        selected && styles.selectedPaymentText,
+        disabled && styles.disabledPaymentText
+      ]}>
+        {title} {disabled && '(Coming Soon)'}
       </Text>
-      {selected && <Icon name="check-circle" size={20} color="#dc2626" />}
+      {selected && !disabled && <Icon name="check-circle" size={20} color="#dc2626" />}
     </TouchableOpacity>
   );
 
@@ -85,13 +248,13 @@ const PaymentModal = ({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}
+      onRequestClose={clearFormAndClose}
     >
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Complete Purchase</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <TouchableOpacity onPress={clearFormAndClose} style={styles.closeButton}>
             <Icon name="close" size={24} color="#374151" />
           </TouchableOpacity>
         </View>
@@ -144,6 +307,7 @@ const PaymentModal = ({
                 keyboardType="email-address"
                 autoCapitalize="none"
                 editable={!isProcessing}
+                autoCorrect={false}
               />
             </View>
 
@@ -155,6 +319,7 @@ const PaymentModal = ({
                 value={customerName}
                 onChangeText={setCustomerName}
                 editable={!isProcessing}
+                autoCorrect={false}
               />
             </View>
 
@@ -182,29 +347,64 @@ const PaymentModal = ({
               selected={selectedPaymentMethod === 'card'}
               onSelect={setSelectedPaymentMethod}
             />
-            
+
+            {/* Additional payment methods can be added here */}
             <PaymentMethodOption
-              method="paypal"
-              title="PayPal"
-              icon="payment"
-              selected={selectedPaymentMethod === 'paypal'}
-              onSelect={setSelectedPaymentMethod}
-            />
-            
-            <PaymentMethodOption
-              method="apple"
+              method="apple_pay"
               title="Apple Pay"
-              icon="phone-iphone"
-              selected={selectedPaymentMethod === 'apple'}
+              icon="smartphone"
+              selected={selectedPaymentMethod === 'apple_pay'}
               onSelect={setSelectedPaymentMethod}
+              disabled={true}
             />
+
+            <PaymentMethodOption
+              method="google_pay"
+              title="Google Pay"
+              icon="payment"
+              selected={selectedPaymentMethod === 'google_pay'}
+              onSelect={setSelectedPaymentMethod}
+              disabled={true}
+            />
+
+            {/* Stripe Card Field */}
+            {selectedPaymentMethod === 'card' && (
+              <View style={styles.cardContainer}>
+                <Text style={styles.inputLabel}>Card Details *</Text>
+                <CardField
+                  postalCodeEnabled={true}
+                  placeholders={{
+                    number: '4242 4242 4242 4242',
+                    expiry: 'MM/YY',
+                    cvc: 'CVC',
+                    postalCode: 'ZIP',
+                  }}
+                  cardStyle={{
+                    backgroundColor: '#ffffff',
+                    textColor: '#1f2937',
+                    borderColor: '#d1d5db',
+                    borderWidth: 1,
+                    borderRadius: 8,
+                    fontSize: 16,
+                    placeholderColor: '#9ca3af',
+                  }}
+                  style={styles.cardFieldContainer}
+                  onCardChange={(details) => {
+                    console.log('Card details changed:', details);
+                    setCardDetails(details || {});
+                    setCardComplete(details?.complete || false);
+                  }}
+                  disabled={isProcessing}
+                />
+              </View>
+            )}
           </View>
 
           {/* Terms */}
           <View style={styles.section}>
             <Text style={styles.termsText}>
               By completing this purchase, you agree to our Terms of Service and Privacy Policy. 
-              eSIM details will be sent to your email address.
+              eSIM details will be sent to your email address after successful activation.
             </Text>
           </View>
         </ScrollView>
@@ -217,7 +417,12 @@ const PaymentModal = ({
             disabled={isProcessing}
           >
             {isProcessing ? (
-              <ActivityIndicator color="white" size="small" />
+              <View style={styles.processingContainer}>
+                <ActivityIndicator color="white" size="small" />
+                <Text style={styles.processingText}>
+                  {processingStep || 'Processing...'}
+                </Text>
+              </View>
             ) : (
               <>
                 <Icon name="shopping-cart" size={20} color="white" />
@@ -278,10 +483,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
@@ -360,6 +562,10 @@ const styles = StyleSheet.create({
     borderColor: '#dc2626',
     backgroundColor: '#fef2f2',
   },
+  disabledPaymentOption: {
+    backgroundColor: '#f9fafb',
+    opacity: 0.6,
+  },
   paymentText: {
     fontSize: 16,
     color: '#6b7280',
@@ -369,6 +575,43 @@ const styles = StyleSheet.create({
   selectedPaymentText: {
     color: '#dc2626',
     fontWeight: '500',
+  },
+  disabledPaymentText: {
+    color: '#9ca3af',
+  },
+  cardContainer: {
+    marginTop: 16,
+  },
+  cardFieldContainer: {
+    height: 50,
+    marginVertical: 8,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 4,
+    fontFamily: 'monospace',
+  },
+  debugContainer: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 4,
+  },
+  testModeButton: {
+    marginTop: 4,
+    padding: 4,
+    backgroundColor: '#fbbf24',
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  testModeText: {
+    fontSize: 10,
+    color: '#92400e',
+    fontWeight: 'bold',
   },
   termsText: {
     fontSize: 12,
@@ -395,6 +638,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#9ca3af',
   },
   purchaseButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+    marginLeft: 8,
+  },
+  processingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  processingText: {
     fontSize: 16,
     fontWeight: 'bold',
     color: 'white',
