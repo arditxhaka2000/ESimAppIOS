@@ -3,44 +3,279 @@ import axios from 'axios';
 export class GloesimApiService {
   static instance = null;
   
-  constructor() {
-    this.baseUrl = 'https://gloesim.com/api/';
+  constructor(useSandbox = true) {
+    this.baseUrl = useSandbox 
+      ? 'https://sandbox.gloesim.com/api/' 
+      : 'https://gloesim.com/api/';
+    
     this.bearerToken = '';
+    this.useSandbox = useSandbox;
+    this.isAuthenticated = false;
+    this.isAuthenticating = false;
+    
+    // Store credentials for auto-authentication
+    this.credentials = {
+      email: 'ronhoxha333@gmail.com', // Replace with your actual credentials
+      password: 'N8PtkcaQ6A'  // Replace with your actual credentials
+    };
+    
+    console.log(`GloeSIM API initialized: ${this.useSandbox ? 'SANDBOX' : 'PRODUCTION'}`);
+    console.log(`Base URL: ${this.baseUrl}`);
     
     this.httpClient = axios.create({
       baseURL: this.baseUrl,
       timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
     });
 
-    // Request interceptor to add auth header
+    // Request interceptor to add auth header and handle auto-authentication
     this.httpClient.interceptors.request.use(
-      (config) => {
+      async (config) => {
+        console.log(`API Request: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
+        
+        // Skip authentication for login endpoint
+        if (config.url.includes('login')) {
+          return config;
+        }
+        
+        // Auto-authenticate if not authenticated
+        if (!this.isAuthenticated && !this.isAuthenticating) {
+          console.log('Not authenticated, attempting auto-login...');
+          await this.autoAuthenticate();
+        }
+        
         if (this.bearerToken) {
           config.headers.Authorization = `Bearer ${this.bearerToken}`;
+          console.log('Bearer token added to request');
+        } else {
+          console.log('No Bearer token available');
         }
+        
         return config;
       },
-      (error) => Promise.reject(error)
+      (error) => {
+        console.error('Request interceptor error:', error);
+        return Promise.reject(error);
+      }
+    );
+
+    // Response interceptor with auto-re-authentication on 401
+    this.httpClient.interceptors.response.use(
+      (response) => {
+        console.log(`API Success: ${response.status} ${response.config.url}`);
+        return response;
+      },
+      async (error) => {
+        console.error(`API Error: ${error.response?.status || error.code} ${error.config?.url}`);
+        
+        // Handle 401 errors with auto-re-authentication
+        if (error.response?.status === 401 && !error.config.url.includes('login')) {
+          console.log('401 error, attempting re-authentication...');
+          
+          this.isAuthenticated = false;
+          this.bearerToken = '';
+          
+          // Try to re-authenticate
+          const authSuccess = await this.autoAuthenticate();
+          
+          if (authSuccess && error.config) {
+            console.log('Re-authentication successful, retrying original request...');
+            
+            // Update the failed request with new token
+            error.config.headers.Authorization = `Bearer ${this.bearerToken}`;
+            
+            // Retry the original request
+            return this.httpClient(error.config);
+          }
+        }
+        
+        console.error('Error details:', {
+          message: error.message,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          code: error.code
+        });
+        
+        return Promise.reject(error);
+      }
     );
   }
 
-  static getInstance() {
+  static getInstance(useSandbox = true) {
+    if (GloesimApiService.instance && GloesimApiService.instance.useSandbox !== useSandbox) {
+      console.log('Environment changed, creating new instance');
+      GloesimApiService.instance = null;
+    }
+    
     if (!GloesimApiService.instance) {
-      GloesimApiService.instance = new GloesimApiService();
+      GloesimApiService.instance = new GloesimApiService(useSandbox);
     }
     return GloesimApiService.instance;
   }
 
-  setBearerToken(token) {
-    this.bearerToken = token;
+  // Set credentials for auto-authentication
+  setCredentials(email, password) {
+    this.credentials.email = email;
+    this.credentials.password = password;
+    console.log('Credentials updated for auto-authentication');
+  }
+
+  // Internal auto-authentication method
+  async autoAuthenticate() {
+    if (this.isAuthenticating) {
+      console.log('Authentication already in progress, waiting...');
+      // Wait for current authentication to complete
+      while (this.isAuthenticating) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return this.isAuthenticated;
+    }
+
+    this.isAuthenticating = true;
+    
+    try {
+      console.log(`Auto-authenticating to ${this.useSandbox ? 'SANDBOX' : 'PRODUCTION'}...`);
+      
+      const response = await axios.post(`${this.baseUrl}developer/reseller/login`, {
+        email: this.credentials.email,
+        password: this.credentials.password,
+      });
+
+      if (response.data && response.data.status && response.data.access_token) {
+        this.bearerToken = response.data.access_token;
+        this.isAuthenticated = true;
+        
+        console.log('Auto-authentication successful');
+        return true;
+      } else {
+        console.error('Auto-authentication failed: Invalid response structure');
+        return false;
+      }
+    } catch (error) {
+      console.error('Auto-authentication error:', error.message);
+      console.error('Auth failed with details:', {
+        status: error.response?.status,
+        data: error.response?.data
+      });
+      
+      this.isAuthenticated = false;
+      this.bearerToken = '';
+      return false;
+    } finally {
+      this.isAuthenticating = false;
+    }
+  }
+
+  // Manual login method (optional, for explicit authentication)
+  async loginAsync(email, password) {
+    this.setCredentials(email, password);
+    const success = await this.autoAuthenticate();
+    
+    return {
+      success,
+      token: this.bearerToken,
+      error: success ? null : 'Authentication failed'
+    };
+  }
+
+  // Check if user is authenticated
+  isLoggedIn() {
+    return this.isAuthenticated && !!this.bearerToken;
+  }
+
+  // Get current token
+  getToken() {
+    return this.bearerToken;
   }
 
   clearBearerToken() {
     this.bearerToken = '';
+    this.isAuthenticated = false;
+    console.log('Bearer token cleared');
   }
 
-  setEnvironment() {
-    // Environment setup if needed
+  setEnvironment(useSandbox = true) {
+    if (this.useSandbox !== useSandbox) {
+      // Clear authentication when switching environments
+      this.bearerToken = '';
+      this.isAuthenticated = false;
+      this.isAuthenticating = false;
+      
+      this.useSandbox = useSandbox;
+      this.baseUrl = useSandbox 
+        ? 'https://sandbox.gloesim.com/api/' 
+        : 'https://gloesim.com/api/';
+      
+      this.httpClient.defaults.baseURL = this.baseUrl;
+      
+      console.log(`Environment switched to: ${this.useSandbox ? 'SANDBOX' : 'PRODUCTION'}`);
+      console.log(`New Base URL: ${this.baseUrl}`);
+      console.log('Authentication cleared - will auto-authenticate on next API call');
+    }
+  }
+
+  // All your existing API methods remain the same, but without ensureAuthenticated() calls
+  // since authentication is now handled automatically in the interceptor
+
+  async getCountriesAsync() {
+    try {
+      console.log('Fetching countries...');
+      const response = await this.httpClient.get('developer/reseller/packages/country');
+      console.log('Countries fetched successfully');
+      return response.data;
+    } catch (error) {
+      console.error('Error getting countries:', error.message);
+      return null;
+    }
+  }
+
+  async getGlobalPackagesAsync(packageType = null) {
+    try {
+      let url = 'developer/reseller/packages/global';
+      if (packageType) {
+        url += `?package_type=${encodeURIComponent(packageType)}`;
+      }
+
+      const response = await this.httpClient.get(url);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting global packages:', error.message);
+      return null;
+    }
+  }
+
+  async getContinentsAsync() {
+    try {
+      const response = await this.httpClient.get('developer/reseller/packages/continent');
+      return response.data;
+    } catch (error) {
+      console.error('Error getting continents:', error.message);
+      return null;
+    }
+  }
+
+  async getPackagesByCountryAsync(countryId) {
+    try {
+      const response = await this.httpClient.get(`developer/reseller/packages/country/${countryId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting packages by country:', error.message);
+      return null;
+    }
+  }
+
+  async getMyESIMsAsync() {
+    try {
+      const response = await this.httpClient.get('developer/reseller/my-esims');
+      return response.data;
+    } catch (error) {
+      console.error('Error getting my eSIMs:', error.message);
+      return null;
+    }
   }
 
   async checkDeviceCompatibilityAsync(imei) {
@@ -83,61 +318,6 @@ export class GloesimApiService {
       return response.data;
     } catch (error) {
       console.error('Error getting packages:', error.message);
-      return null;
-    }
-  }
-
-  async getGlobalPackagesAsync(packageType = null) {
-    try {
-      let url = 'developer/reseller/packages/global';
-      if (packageType) {
-        url += `?package_type=${encodeURIComponent(packageType)}`;
-      }
-
-      const response = await this.httpClient.get(url);
-      return response.data;
-    } catch (error) {
-      console.error('Error getting global packages:', error.message);
-      return null;
-    }
-  }
-
-  async getCountriesAsync() {
-    try {
-      const response = await this.httpClient.get('developer/reseller/packages/country');
-      return response.data;
-    } catch (error) {
-      console.error('Error getting countries:', error.message);
-      return null;
-    }
-  }
-
-  async getContinentsAsync() {
-    try {
-      const response = await this.httpClient.get('developer/reseller/packages/continent');
-      return response.data;
-    } catch (error) {
-      console.error('Error getting continents:', error.message);
-      return null;
-    }
-  }
-
-  async getPackagesByCountryAsync(countryId) {
-    try {
-      const response = await this.httpClient.get(`developer/reseller/packages/country/${countryId}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error getting packages by country:', error.message);
-      return null;
-    }
-  }
-
-  async getMyESIMsAsync() {
-    try {
-      const response = await this.httpClient.get('developer/reseller/my-esims');
-      return response.data;
-    } catch (error) {
-      console.error('Error getting my eSIMs:', error.message);
       return null;
     }
   }

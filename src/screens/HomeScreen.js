@@ -1,3 +1,4 @@
+// screens/HomeScreen.js - Updated version with proper authentication
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -16,11 +17,20 @@ import { useAuth } from '../context/AuthContext';
 import { useApi } from '../context/ApiContext';
 import CountriesModal from '../components/CountriesModal';
 import PaymentModal from '../components/PaymentModal';
+import ESimSuccessModal from '../screens/ESimSuccessModal';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 const HomeScreen = ({ navigation }) => {
-  const { isAuthenticated, login } = useAuth();
+  const { 
+    isAuthenticated, 
+    userDisplayName, 
+    userEmail,
+    profile,
+    loading: authLoading,
+    loginAsGuest 
+  } = useAuth();
+  
   const {
     fetchGlobalPackages,
     fetchCountries,
@@ -39,10 +49,17 @@ const HomeScreen = ({ navigation }) => {
   const [continents, setContinents] = useState([]);
   const [deviceCompatibility, setDeviceCompatibility] = useState('Checking device...');
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Modal states
   const [coverageModalVisible, setCoverageModalVisible] = useState(false);
   const [selectedPackageCountries, setSelectedPackageCountries] = useState(null);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [selectedPackageForPurchase, setSelectedPackageForPurchase] = useState(null);
+  
+  // Success modal states
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [esimData, setESimData] = useState(null);
+  const [customerData, setCustomerData] = useState(null);
 
   const promoBanners = [
     {
@@ -58,22 +75,32 @@ const HomeScreen = ({ navigation }) => {
   ];
 
   useEffect(() => {
-    initializeData();
-  }, []);
-
-  useEffect(() => {
     if (isAuthenticated) {
+      initializeData();
       checkDeviceCompatibilityStatus();
     }
   }, [isAuthenticated]);
 
   const initializeData = async () => {
-    // Auto login with hardcoded credentials (matching your MAUI app)
     if (!isAuthenticated) {
-      await login('ronhoxha333@gmail.com', 'N8PtkcaQ6A');
+      // Auto-login as guest for now, but you can redirect to login
+      await handleGuestLogin();
+    } else {
+      await loadData();
     }
-    
-    await loadData();
+  };
+
+  const handleGuestLogin = async () => {
+    try {
+      const result = await loginAsGuest();
+      if (!result.success) {
+        // Redirect to login screen if guest login fails
+        navigation.navigate('Login');
+      }
+    } catch (error) {
+      console.error('Guest login failed:', error);
+      navigation.navigate('Login');
+    }
   };
 
   const loadData = async () => {
@@ -89,6 +116,7 @@ const HomeScreen = ({ navigation }) => {
       setContinents(continentsData);
     } catch (error) {
       console.error('Error loading data:', error);
+      Alert.alert('Error', 'Failed to load data. Please try again.');
     }
   };
 
@@ -147,43 +175,45 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const handleLogin = () => {
-    Alert.alert('Login', 'Login functionality');
+    navigation.navigate('Login');
+  };
+
+  const handleProfile = () => {
+    if (isAuthenticated) {
+      navigation.navigate('Profile');
+    } else {
+      navigation.navigate('Login');
+    }
   };
 
   const handlePackagePurchase = (packageItem) => {
     setSelectedPackageForPurchase(packageItem);
     setPaymentModalVisible(true);
   };
-  const handlePurchaseWithCustomerData = async (packageItem, customerData) => {
-  try {
-    let result;
-    if (packageItem.package_type === 'DATA-ONLY') {
-      result = await purchaseDataOnlyPackage(packageItem.id);
-    } else {
-      result = await purchasePackage(packageItem.id);
-    }
 
-    if (result.success) {
-      // Store customer data locally for tracking
-      await SecureStorageService.setAsync(
-        `purchase_${Date.now()}`, 
-        JSON.stringify({
-          ...customerData,
-          package: packageItem,
-          purchaseDate: new Date().toISOString(),
-          esimData: result.data
-        })
-      );
-      
-      setPaymentModalVisible(false);
-      Alert.alert('Success', `Package purchased successfully! eSIM details will be sent to ${customerData.email}`);
-    } else {
-      Alert.alert('Error', 'Failed to purchase package. Please try again.');
-    }
-  } catch (error) {
-    Alert.alert('Error', `Purchase failed: ${error.message}`);
-  }
-};
+  // New success handler for the payment modal
+  const handlePurchaseSuccess = (esimResult, custData) => {
+    console.log('Purchase success in HomeScreen:', { esimResult, custData });
+    
+    // Close payment modal first
+    setPaymentModalVisible(false);
+    
+    // Set success modal data
+    setESimData(esimResult);
+    setCustomerData(custData);
+    
+    // Show success modal after a brief delay
+    setTimeout(() => {
+      setShowSuccessModal(true);
+    }, 300);
+  };
+
+  const handleSuccessModalClose = () => {
+    setShowSuccessModal(false);
+    setESimData(null);
+    setCustomerData(null);
+  };
+
   const handleCountrySelect = (country) => {
     navigation.navigate('CountryPackages', { country });
   };
@@ -193,13 +223,13 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const handleViewCoverage = (packageItem) => {
-  if (packageItem.countries) {
-    setSelectedPackageCountries(packageItem.countries);
-    setCoverageModalVisible(true);
-  } else {
-    Alert.alert('Coverage', 'Coverage information not available');
-  }
-};
+    if (packageItem.countries) {
+      setSelectedPackageCountries(packageItem.countries);
+      setCoverageModalVisible(true);
+    } else {
+      Alert.alert('Coverage', 'Coverage information not available');
+    }
+  };
 
   const renderPromoBanner = ({ item, index }) => (
     <View style={styles.promoBanner}>
@@ -323,11 +353,21 @@ const HomeScreen = ({ navigation }) => {
             <Text style={styles.logoESim}>eSim</Text>
           </View>
           
-          <TouchableOpacity style={styles.profileButton} onPress={handleLogin}>
+          <TouchableOpacity style={styles.profileButton} onPress={handleProfile}>
             <Text style={styles.profileIcon}>👤</Text>
-            <Text style={styles.profileText}>Kyçu</Text>
+            <Text style={styles.profileText}>
+              {isAuthenticated ? userDisplayName : 'Kyçu'}
+            </Text>
           </TouchableOpacity>
         </View>
+
+        {/* User Info Bar (if authenticated) */}
+        {isAuthenticated && (
+          <View style={styles.userInfoBar}>
+            <Text style={styles.welcomeText}>Welcome back, {userDisplayName}!</Text>
+            <Text style={styles.deviceCompatibility}>{deviceCompatibility}</Text>
+          </View>
+        )}
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
@@ -393,17 +433,26 @@ const HomeScreen = ({ navigation }) => {
         {renderTabContent()}
       </ScrollView>
 
-
+      {/* Modals */}
       <CountriesModal
         visible={coverageModalVisible}
         countries={selectedPackageCountries}
         onClose={() => setCoverageModalVisible(false)}
       />
+      
       <PaymentModal
         visible={paymentModalVisible}
         package={selectedPackageForPurchase}
         onClose={() => setPaymentModalVisible(false)}
-        onPurchase={handlePurchaseWithCustomerData}
+        onPurchaseSuccess={handlePurchaseSuccess}
+      />
+
+      <ESimSuccessModal
+        visible={showSuccessModal}
+        onClose={handleSuccessModalClose}
+        esimData={esimData}
+        customerData={customerData}
+        packageData={selectedPackageForPurchase}
       />
     </View>
   );
@@ -458,6 +507,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#dc2626',
+    maxWidth: 100,
+  },
+  userInfoBar: {
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fecaca',
+  },
+  welcomeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#dc2626',
+    marginBottom: 4,
+  },
+  deviceCompatibility: {
+    fontSize: 12,
+    color: '#6b7280',
   },
   searchContainer: {
     paddingHorizontal: 20,

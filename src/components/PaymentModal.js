@@ -14,11 +14,44 @@ import { MaterialIcons as Icon } from '@expo/vector-icons';
 import { CardField, useStripe } from '@stripe/stripe-react-native';
 import { SupabaseService } from '../services/SupabaseService';
 
-const PaymentModal = ({ 
-  visible, 
-  package: selectedPackage, 
-  onClose, 
-  onPurchaseSuccess 
+// Helper functions for card brand detection
+const getCardBrandIcon = (brand) => {
+  switch (brand?.toLowerCase()) {
+    case 'visa':
+      return 'credit-card';
+    case 'mastercard':
+      return 'credit-card';
+    case 'amex':
+    case 'american-express':
+      return 'credit-card';
+    case 'discover':
+      return 'credit-card';
+    default:
+      return 'credit-card';
+  }
+};
+
+const getCardBrandColor = (brand) => {
+  switch (brand?.toLowerCase()) {
+    case 'visa':
+      return '#1a1f71';
+    case 'mastercard':
+      return '#eb001b';
+    case 'amex':
+    case 'american-express':
+      return '#006fcf';
+    case 'discover':
+      return '#ff6000';
+    default:
+      return '#6b7280';
+  }
+};
+
+const PaymentModal = ({
+  visible,
+  package: selectedPackage,
+  onClose,
+  onPurchaseSuccess
 }) => {
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -28,10 +61,10 @@ const PaymentModal = ({
   const [cardComplete, setCardComplete] = useState(false);
   const [cardDetails, setCardDetails] = useState({});
   const [processingStep, setProcessingStep] = useState('');
-  
+
   const stripe = useStripe();
   const supabaseService = SupabaseService.getInstance();
-  
+
   const handlePurchase = async () => {
     console.log('Purchase button clicked');
     if (!validateForm()) return;
@@ -41,7 +74,7 @@ const PaymentModal = ({
     }
 
     setIsProcessing(true);
-    
+
     try {
       const customerData = {
         email: customerEmail.trim(),
@@ -58,7 +91,7 @@ const PaymentModal = ({
         selectedPackage.id, // package_id
         selectedPackage.name // package_name
       );
-      
+
       if (!paymentIntentResult.success) {
         console.error('Payment intent creation failed:', paymentIntentResult.error);
         Alert.alert('Payment Error', paymentIntentResult.error || 'Failed to create payment intent');
@@ -91,13 +124,14 @@ const PaymentModal = ({
 
       console.log('Payment confirmed, status:', paymentIntent.status);
 
-      if (paymentIntent.status === 'succeeded') {
+      // Fix the payment status check to be case-insensitive
+      if (paymentIntent.status.toLowerCase() === 'succeeded') {
         // Step 3: Purchase eSIM after successful payment
         await handleESimPurchase(customerData, paymentIntent.id);
       } else {
         Alert.alert('Payment Error', `Payment status: ${paymentIntent.status}`);
       }
-      
+
     } catch (error) {
       console.error('Purchase error:', error);
       Alert.alert('Error', error.message || 'Purchase failed. Please try again.');
@@ -118,29 +152,22 @@ const PaymentModal = ({
       );
 
       if (esimResult.success) {
-        // Step 4: Update the purchase record with eSIM data
         setProcessingStep('Finalizing purchase...');
-        
-        // Update the existing purchase record with eSIM data
+
         const updateResult = await supabaseService.updatePurchaseWithESimData(
           paymentId,
           esimResult.data
         );
 
-        if (updateResult.success || !updateResult.success) {
-          // Show success even if update fails (eSIM was still activated)
-          Alert.alert(
-            'Purchase Successful!',
-            `Your eSIM package has been activated successfully!\n\neSIM details have been sent to ${customerData.email}\n\nICCID: ${esimResult.data?.iccid || 'Will be provided via email'}`,
-            [{ text: 'OK', onPress: clearFormAndClose }]
-          );
+        console.log('About to call success callback with data:', esimResult.data);
 
-          // Call success callback if provided
-          if (onPurchaseSuccess) {
-            onPurchaseSuccess(esimResult.data, customerData);
-          }
+        // Call the parent's success handler
+        if (onPurchaseSuccess) {
+          onPurchaseSuccess(esimResult.data, customerData);
         }
 
+        // Clear form
+        clearForm();
       } else {
         // Payment successful but eSIM purchase failed - initiate refund
         Alert.alert(
@@ -160,13 +187,13 @@ const PaymentModal = ({
 
     } catch (error) {
       console.error('eSIM purchase error:', error);
-      
+
       Alert.alert(
         'Purchase Error',
         'Payment was processed but eSIM activation failed. We will process a refund within 24 hours. Please contact support for assistance.',
         [{ text: 'OK', onPress: clearFormAndClose }]
       );
-      
+
       // Initiate refund
       try {
         await supabaseService.refundPayment(paymentId, 'eSIM activation error: ' + error.message);
@@ -220,9 +247,9 @@ const PaymentModal = ({
   };
 
   const PaymentMethodOption = ({ method, title, icon, selected, onSelect, disabled = false }) => (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={[
-        styles.paymentOption, 
+        styles.paymentOption,
         selected && styles.selectedPaymentOption,
         disabled && styles.disabledPaymentOption
       ]}
@@ -231,7 +258,7 @@ const PaymentModal = ({
     >
       <Icon name={icon} size={24} color={disabled ? '#d1d5db' : (selected ? '#dc2626' : '#6b7280')} />
       <Text style={[
-        styles.paymentText, 
+        styles.paymentText,
         selected && styles.selectedPaymentText,
         disabled && styles.disabledPaymentText
       ]}>
@@ -269,8 +296,8 @@ const PaymentModal = ({
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Data:</Text>
                   <Text style={styles.detailValue}>
-                    {selectedPackage.data_quantity === -1 
-                      ? 'Unlimited' 
+                    {selectedPackage.data_quantity === -1
+                      ? 'Unlimited'
                       : `${selectedPackage.data_quantity}${selectedPackage.data_unit}`
                     }
                   </Text>
@@ -296,50 +323,59 @@ const PaymentModal = ({
           {/* Customer Information */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Customer Information</Text>
-            
+
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Email Address *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your email"
-                value={customerEmail}
-                onChangeText={setCustomerEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                editable={!isProcessing}
-                autoCorrect={false}
-              />
+              <View style={styles.inputWrapper}>
+                <Icon name="email" size={20} color="#6b7280" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your email"
+                  value={customerEmail}
+                  onChangeText={setCustomerEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  editable={!isProcessing}
+                  autoCorrect={false}
+                />
+              </View>
             </View>
 
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Full Name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your full name"
-                value={customerName}
-                onChangeText={setCustomerName}
-                editable={!isProcessing}
-                autoCorrect={false}
-              />
+              <View style={styles.inputWrapper}>
+                <Icon name="person" size={20} color="#6b7280" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your full name"
+                  value={customerName}
+                  onChangeText={setCustomerName}
+                  editable={!isProcessing}
+                  autoCorrect={false}
+                />
+              </View>
             </View>
 
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Phone Number (Optional)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your phone number"
-                value={customerPhone}
-                onChangeText={setCustomerPhone}
-                keyboardType="phone-pad"
-                editable={!isProcessing}
-              />
+              <View style={styles.inputWrapper}>
+                <Icon name="phone" size={20} color="#6b7280" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your phone number"
+                  value={customerPhone}
+                  onChangeText={setCustomerPhone}
+                  keyboardType="phone-pad"
+                  editable={!isProcessing}
+                />
+              </View>
             </View>
           </View>
 
           {/* Payment Method */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Payment Method</Text>
-            
+
             <PaymentMethodOption
               method="card"
               title="Credit/Debit Card"
@@ -367,51 +403,91 @@ const PaymentModal = ({
               disabled={true}
             />
 
-            {/* Stripe Card Field */}
+            {/* Enhanced Stripe Card Field */}
             {selectedPaymentMethod === 'card' && (
               <View style={styles.cardContainer}>
                 <Text style={styles.inputLabel}>Card Details *</Text>
-                <CardField
-                  postalCodeEnabled={true}
-                  placeholders={{
-                    number: '4242 4242 4242 4242',
-                    expiry: 'MM/YY',
-                    cvc: 'CVC',
-                    postalCode: 'ZIP',
-                  }}
-                  cardStyle={{
-                    backgroundColor: '#ffffff',
-                    textColor: '#1f2937',
-                    borderColor: '#d1d5db',
-                    borderWidth: 1,
-                    borderRadius: 8,
-                    fontSize: 16,
-                    placeholderColor: '#9ca3af',
-                  }}
-                  style={styles.cardFieldContainer}
-                  onCardChange={(details) => {
-                    console.log('Card details changed:', details);
-                    setCardDetails(details || {});
-                    setCardComplete(details?.complete || false);
-                  }}
-                  disabled={isProcessing}
-                />
+
+                {/* Card Input with Custom Styling */}
+                <View style={styles.cardInputWrapper}>
+                  <CardField
+                    postalCodeEnabled={true}
+                    placeholders={{
+                      number: '1234 5678 9012 3456',
+                      expiry: 'MM/YY',
+                      cvc: 'CVC',
+                      postalCode: 'ZIP Code',
+                    }}
+                    cardStyle={{
+                      backgroundColor: '#ffffff',
+                      textColor: '#1f2937',
+                      borderColor: 'transparent',
+                      borderWidth: 0,
+                      borderRadius: 0,
+                      fontSize: 16,
+                      placeholderColor: '#9ca3af',
+                    }}
+                    style={styles.cardField}
+                    onCardChange={(details) => {
+                      console.log('Card details changed:', details);
+                      setCardDetails(details || {});
+                      setCardComplete(details?.complete || false);
+                    }}
+                    disabled={isProcessing}
+                  />
+                </View>
+
+                {/* Card Brand Icon and Status */}
+                <View style={styles.cardStatusContainer}>
+                  <View style={styles.cardBrandContainer}>
+                    {cardDetails.brand && (
+                      <View style={styles.cardBrandIndicator}>
+                        <Icon
+                          name={getCardBrandIcon(cardDetails.brand)}
+                          size={24}
+                          color={getCardBrandColor(cardDetails.brand)}
+                        />
+                        <Text style={styles.cardBrandText}>
+                          {cardDetails.brand.toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {cardComplete && (
+                    <View style={styles.validCardIndicator}>
+                      <Icon name="check-circle" size={20} color="#10b981" />
+                      <Text style={styles.validCardText}>Valid</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Security Notice */}
+                <View style={styles.securityNotice}>
+                  <Icon name="security" size={16} color="#6b7280" />
+                  <Text style={styles.securityText}>
+                    Your card information is encrypted and secure
+                  </Text>
+                </View>
               </View>
             )}
           </View>
 
           {/* Terms */}
           <View style={styles.section}>
-            <Text style={styles.termsText}>
-              By completing this purchase, you agree to our Terms of Service and Privacy Policy. 
-              eSIM details will be sent to your email address after successful activation.
-            </Text>
+            <View style={styles.termsContainer}>
+              <Icon name="info-outline" size={16} color="#6b7280" />
+              <Text style={styles.termsText}>
+                By completing this purchase, you agree to our Terms of Service and Privacy Policy.
+                eSIM details will be sent to your email address after successful activation.
+              </Text>
+            </View>
           </View>
         </ScrollView>
 
         {/* Purchase Button */}
         <View style={styles.footer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.purchaseButton, isProcessing && styles.disabledButton]}
             onPress={handlePurchase}
             disabled={isProcessing}
@@ -453,14 +529,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3.84,
+    elevation: 2,
   },
   title: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#1f2937',
   },
   closeButton: {
     padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f3f4f6',
   },
   content: {
     flex: 1,
@@ -470,29 +553,31 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#1f2937',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   packageSummary: {
     marginTop: 16,
   },
   summaryCard: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowRadius: 6,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
   },
   packageName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#1f2937',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   packageDetails: {
     marginBottom: 16,
@@ -500,51 +585,66 @@ const styles = StyleSheet.create({
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 12,
+    paddingVertical: 4,
   },
   detailLabel: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#6b7280',
+    fontWeight: '500',
   },
   detailValue: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 15,
+    fontWeight: '600',
     color: '#1f2937',
   },
   priceContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 16,
-    borderTopWidth: 1,
+    paddingTop: 20,
+    borderTopWidth: 2,
     borderTopColor: '#e5e7eb',
   },
   priceLabel: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#1f2937',
   },
   priceValue: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#dc2626',
   },
   inputContainer: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 15,
+    fontWeight: '600',
     color: '#374151',
     marginBottom: 8,
   },
-  input: {
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3.84,
+    elevation: 2,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    paddingVertical: 16,
     fontSize: 16,
     color: '#1f2937',
   },
@@ -552,11 +652,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
     padding: 16,
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3.84,
+    elevation: 2,
   },
   selectedPaymentOption: {
     borderColor: '#dc2626',
@@ -571,10 +676,11 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginLeft: 12,
     flex: 1,
+    fontWeight: '500',
   },
   selectedPaymentText: {
     color: '#dc2626',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   disabledPaymentText: {
     color: '#9ca3af',
@@ -582,63 +688,147 @@ const styles = StyleSheet.create({
   cardContainer: {
     marginTop: 16,
   },
-  cardFieldContainer: {
+  cardInputWrapper: {
+    backgroundColor: 'white',
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3.84,
+    elevation: 2,
+  },
+  cardField: {
     height: 50,
-    marginVertical: 8,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
+  },
+  cardStatusContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: 4,
+  },
+  cardBrandContainer: {
+    flex: 1,
+  },
+  cardBrandIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardBrandText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginLeft: 8,
+    letterSpacing: 0.5,
+  },
+  validCardIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
   },
-  debugText: {
+  validCardText: {
     fontSize: 12,
-    color: '#6b7280',
-    marginTop: 4,
-    fontFamily: 'monospace',
+    fontWeight: '600',
+    color: '#10b981',
+    marginLeft: 4,
   },
-  debugContainer: {
-    marginTop: 8,
-    padding: 8,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 4,
+  securityNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 10,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
   },
-  testModeButton: {
-    marginTop: 4,
-    padding: 4,
+  securityText: {
+    fontSize: 12,
+    color: '#0369a1',
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  testCardInfo: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#fef3c7',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+  },
+  testCardTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400e',
+    marginBottom: 6,
+  },
+  testCardButton: {
     backgroundColor: '#fbbf24',
-    borderRadius: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
     alignSelf: 'flex-start',
   },
-  testModeText: {
-    fontSize: 10,
+  testCardButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
     color: '#92400e',
-    fontWeight: 'bold',
+    fontFamily: 'monospace',
+  },
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#f8fafc',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   termsText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#6b7280',
-    lineHeight: 18,
-    textAlign: 'center',
+    lineHeight: 20,
+    marginLeft: 8,
+    flex: 1,
   },
   footer: {
     padding: 16,
     backgroundColor: 'white',
     borderTopWidth: 1,
     borderTopColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   purchaseButton: {
     flexDirection: 'row',
     backgroundColor: '#dc2626',
-    borderRadius: 8,
-    paddingVertical: 16,
+    borderRadius: 12,
+    paddingVertical: 18,
     paddingHorizontal: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#dc2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
   },
   disabledButton: {
     backgroundColor: '#9ca3af',
+    shadowColor: '#9ca3af',
   },
   purchaseButtonText: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: 'white',
     marginLeft: 8,

@@ -17,6 +17,8 @@ import CountriesScreen from './src/screens/CountriesScreen';
 import MyESimsScreen from './src/screens/MyESimsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CountryPackagesScreen from './src/screens/CountryPackagesScreen';
+import LoginScreen from './src/screens/LoginScreen'; // Add this import
+import ProfileScreen from './src/screens/ProfileScreen'; // Add this import
 
 // Context
 import { ApiProvider } from './src/context/ApiContext';
@@ -28,6 +30,7 @@ const Stack = createStackNavigator();
 const HomeStack = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="HomeMain" component={HomeScreen} />
+    <Stack.Screen name="Profile" component={ProfileScreen} />
   </Stack.Navigator>
 );
 
@@ -101,6 +104,15 @@ const TabNavigator = () => (
   </Tab.Navigator>
 );
 
+// Main Stack Navigator (add this)
+const MainNavigator = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="Main" component={TabNavigator} />
+    <Stack.Screen name="Login" component={LoginScreen} />
+    <Stack.Screen name="Profile" component={ProfileScreen} />
+  </Stack.Navigator>
+);
+
 const App = () => {
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -113,7 +125,7 @@ const App = () => {
         setIsInitialized(true);
       } catch (error) {
         console.error('App initialization error:', error);
-        setIsInitialized(true); // Still proceed even if there's an error
+        setIsInitialized(true);
       }
     };
 
@@ -121,7 +133,7 @@ const App = () => {
   }, []);
 
   if (!isInitialized) {
-    return null; // Or loading screen
+    return null;
   }
 
   return (
@@ -134,7 +146,7 @@ const App = () => {
               backgroundColor="#dc2626" 
               translucent={false}
             />
-            <TabNavigator />
+            <MainNavigator />
           </NavigationContainer>
         </ApiProvider>
       </AuthProvider>
