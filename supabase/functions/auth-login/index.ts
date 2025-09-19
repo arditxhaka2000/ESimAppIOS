@@ -21,13 +21,15 @@ serve(async (req) => {
 
     if (!email || !password) {
       return new Response(
-        JSON.stringify({ error: 'Email and password are required' }),
+        JSON.stringify({ error: 'Email and password are required', success: false }),
         { 
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       )
     }
+
+    console.log('Attempting login for:', email)
 
     // Authenticate user
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -36,6 +38,7 @@ serve(async (req) => {
     })
 
     if (authError) {
+      console.log('Auth error:', authError)
       return new Response(
         JSON.stringify({ 
           error: authError.message,
@@ -48,13 +51,27 @@ serve(async (req) => {
       )
     }
 
-    // Update last login
-    if (authData.user) {
-      await supabase
-        .from('users')
-        .update({ last_login_at: new Date().toISOString() })
-        .eq('auth_id', authData.user.id)
+    if (!authData.user || !authData.session) {
+      console.log('No user or session returned')
+      return new Response(
+        JSON.stringify({ 
+          error: 'Authentication failed',
+          success: false 
+        }),
+        { 
+          status: 401, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
     }
+
+    console.log('Auth successful for user:', authData.user.id)
+
+    // Update last login
+    await supabase
+      .from('users')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('auth_id', authData.user.id)
 
     // Get user profile
     const { data: userProfile, error: profileError } = await supabase
@@ -63,12 +80,38 @@ serve(async (req) => {
       .eq('auth_id', authData.user.id)
       .single()
 
+    if (profileError) {
+      console.log('Profile error:', profileError)
+      return new Response(
+        JSON.stringify({ 
+          error: 'User profile not found',
+          success: false 
+        }),
+        { 
+          status: 404, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+
+    console.log('Profile found:', userProfile.email)
+
+    // Construct proper session object
+    const sessionResponse = {
+      access_token: authData.session.access_token,
+      refresh_token: authData.session.refresh_token,
+      expires_in: authData.session.expires_in,
+      expires_at: authData.session.expires_at,
+      token_type: authData.session.token_type,
+      user: authData.session.user
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         user: authData.user,
         profile: userProfile,
-        session: authData.session
+        session: sessionResponse
       }),
       { 
         status: 200, 
@@ -77,9 +120,10 @@ serve(async (req) => {
     )
 
   } catch (error) {
+    console.error('Login error:', error)
     return new Response(
       JSON.stringify({ 
-        error: error.message,
+        error: error.message || 'Internal server error',
         success: false 
       }),
       { 

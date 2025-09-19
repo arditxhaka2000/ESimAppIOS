@@ -12,14 +12,28 @@ import {
 } from 'react-native';
 import { MaterialIcons as Icon } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { getDeviceNameAsync, getDeviceTypeAsync } from 'expo-device';
 import Constants from 'expo-constants';
 
 const SettingsScreen = ({ navigation }) => {
-  const { isAuthenticated, logout, user } = useAuth();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const { 
+    isAuthenticated, 
+    logout, 
+    user, 
+    profile, 
+    userDisplayName, 
+    userEmail, 
+    isGuest 
+  } = useAuth();
+  
+  const [notificationsEnabled, setNotificationsEnabled] = useState(
+    profile?.notification_preferences?.push ?? true
+  );
+  const [emailNotifications, setEmailNotifications] = useState(
+    profile?.notification_preferences?.email ?? true
+  );
+  const [smsNotifications, setSmsNotifications] = useState(
+    profile?.notification_preferences?.sms ?? false
+  );
 
   const handleLogout = () => {
     Alert.alert(
@@ -31,8 +45,10 @@ const SettingsScreen = ({ navigation }) => {
           text: 'Logout', 
           style: 'destructive',
           onPress: async () => {
-            await logout();
-            Alert.alert('Success', 'You have been logged out');
+            const result = await logout();
+            if (result.success) {
+              Alert.alert('Success', 'You have been logged out');
+            }
           }
         },
       ]
@@ -40,7 +56,11 @@ const SettingsScreen = ({ navigation }) => {
   };
 
   const handleLogin = () => {
-    Alert.alert('Login', 'Login functionality - implement login modal here');
+    navigation.navigate('Login');
+  };
+
+  const handleViewProfile = () => {
+    navigation.navigate('Profile');
   };
 
   const handlePrivacyPolicy = () => {
@@ -56,15 +76,15 @@ const SettingsScreen = ({ navigation }) => {
   };
 
   const handleAbout = async () => {
-  const version = Constants.expoConfig?.version || '1.0.0';
-  const buildNumber = Constants.expoConfig?.android?.versionCode || Constants.expoConfig?.ios?.buildNumber || '1';
-  
-  Alert.alert(
-    'About Next eSIM',
-    `Version: ${version} (${buildNumber})\n\nA modern eSIM management application for seamless connectivity worldwide.`,
-    [{ text: 'OK' }]
-  );
-};
+    const version = Constants.expoConfig?.version || '1.0.0';
+    const buildNumber = Constants.expoConfig?.android?.versionCode || Constants.expoConfig?.ios?.buildNumber || '1';
+    
+    Alert.alert(
+      'About Next eSIM',
+      `Version: ${version} (${buildNumber})\n\nA modern eSIM management application for seamless connectivity worldwide.`,
+      [{ text: 'OK' }]
+    );
+  };
 
   const SettingItem = ({ 
     icon, 
@@ -72,11 +92,12 @@ const SettingsScreen = ({ navigation }) => {
     subtitle, 
     onPress, 
     showArrow = true, 
-    rightComponent 
+    rightComponent,
+    iconBgColor = '#fee2e2'
   }) => (
     <TouchableOpacity style={styles.settingItem} onPress={onPress}>
       <View style={styles.settingLeft}>
-        <View style={styles.iconContainer}>
+        <View style={[styles.iconContainer, { backgroundColor: iconBgColor }]}>
           <Icon name={icon} size={24} color="#dc2626" />
         </View>
         <View style={styles.textContainer}>
@@ -95,6 +116,32 @@ const SettingsScreen = ({ navigation }) => {
     <Text style={styles.sectionHeader}>{title}</Text>
   );
 
+  const ProfileCard = () => {
+    if (!isAuthenticated) return null;
+
+    return (
+      <TouchableOpacity style={styles.profileCard} onPress={handleViewProfile}>
+        <View style={styles.profileLeft}>
+          <View style={styles.profileAvatar}>
+            <Text style={styles.profileAvatarText}>
+              {userDisplayName?.charAt(0)?.toUpperCase() || 'U'}
+            </Text>
+          </View>
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>{userDisplayName}</Text>
+            <Text style={styles.profileEmail}>{userEmail}</Text>
+            {isGuest && (
+              <View style={styles.guestBadge}>
+                <Text style={styles.guestBadgeText}>GUEST</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        <Icon name="chevron-right" size={24} color="#9ca3af" />
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#dc2626" />
@@ -106,6 +153,9 @@ const SettingsScreen = ({ navigation }) => {
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         
+        {/* Profile Card */}
+        {isAuthenticated && <ProfileCard />}
+        
         {/* Account Section */}
         <SectionHeader title="Account" />
         
@@ -113,16 +163,25 @@ const SettingsScreen = ({ navigation }) => {
           <>
             <SettingItem
               icon="person"
-              title="Profile"
-              subtitle={user?.email || 'Manage your account'}
-              onPress={() => Alert.alert('Profile', 'Profile management coming soon')}
+              title="Profile & Account"
+              subtitle="Manage your personal information"
+              onPress={handleViewProfile}
             />
+            
+            <SettingItem
+              icon="history"
+              title="Purchase History"
+              subtitle="View your eSIM purchases"
+              onPress={() => navigation.navigate('MyeSims')}
+            />
+            
             <SettingItem
               icon="logout"
               title="Logout"
               subtitle="Sign out of your account"
               onPress={handleLogout}
               showArrow={false}
+              iconBgColor="#fef2f2"
             />
           </>
         ) : (
@@ -131,6 +190,7 @@ const SettingsScreen = ({ navigation }) => {
             title="Login"
             subtitle="Sign in to your account"
             onPress={handleLogin}
+            iconBgColor="#dbeafe"
           />
         )}
 
@@ -139,35 +199,55 @@ const SettingsScreen = ({ navigation }) => {
         
         <SettingItem
           icon="notifications"
-          title="Notifications"
+          title="Push Notifications"
           subtitle="Receive app notifications"
           onPress={() => {}}
           showArrow={false}
           rightComponent={
             <Switch
-              value={darkMode}
-              onValueChange={setDarkMode}
+              value={notificationsEnabled}
+              onValueChange={setNotificationsEnabled}
               trackColor={{ false: '#d1d5db', true: '#dc2626' }}
-              thumbColor={darkMode ? '#ffffff' : '#f4f3f4'}
+              thumbColor={notificationsEnabled ? '#ffffff' : '#f4f3f4'}
             />
           }
         />
         
-        <SettingItem
-          icon="refresh"
-          title="Auto Refresh"
-          subtitle="Automatically refresh data"
-          onPress={() => {}}
-          showArrow={false}
-          rightComponent={
-            <Switch
-              value={autoRefresh}
-              onValueChange={setAutoRefresh}
-              trackColor={{ false: '#d1d5db', true: '#dc2626' }}
-              thumbColor={autoRefresh ? '#ffffff' : '#f4f3f4'}
+        {isAuthenticated && (
+          <>
+            <SettingItem
+              icon="email"
+              title="Email Notifications"
+              subtitle="Receive notifications via email"
+              onPress={() => {}}
+              showArrow={false}
+              rightComponent={
+                <Switch
+                  value={emailNotifications}
+                  onValueChange={setEmailNotifications}
+                  trackColor={{ false: '#d1d5db', true: '#dc2626' }}
+                  thumbColor={emailNotifications ? '#ffffff' : '#f4f3f4'}
+                />
+              }
             />
-          }
-        />
+            
+            <SettingItem
+              icon="sms"
+              title="SMS Notifications"
+              subtitle="Receive notifications via SMS"
+              onPress={() => {}}
+              showArrow={false}
+              rightComponent={
+                <Switch
+                  value={smsNotifications}
+                  onValueChange={setSmsNotifications}
+                  trackColor={{ false: '#d1d5db', true: '#dc2626' }}
+                  thumbColor={smsNotifications ? '#ffffff' : '#f4f3f4'}
+                />
+              }
+            />
+          </>
+        )}
 
         {/* Data & Storage */}
         <SectionHeader title="Data & Storage" />
@@ -177,6 +257,7 @@ const SettingsScreen = ({ navigation }) => {
           title="Clear Cache"
           subtitle="Clear app cache data"
           onPress={() => Alert.alert('Clear Cache', 'Cache cleared successfully')}
+          iconBgColor="#f3e8ff"
         />
         
         <SettingItem
@@ -184,6 +265,7 @@ const SettingsScreen = ({ navigation }) => {
           title="Data Usage"
           subtitle="View data consumption"
           onPress={() => Alert.alert('Data Usage', 'Data usage statistics coming soon')}
+          iconBgColor="#ecfdf5"
         />
 
         {/* Support & Legal */}
@@ -194,6 +276,7 @@ const SettingsScreen = ({ navigation }) => {
           title="Help & Support"
           subtitle="Get help or contact support"
           onPress={handleSupport}
+          iconBgColor="#fef3c7"
         />
         
         <SettingItem
@@ -201,6 +284,7 @@ const SettingsScreen = ({ navigation }) => {
           title="Privacy Policy"
           subtitle="Read our privacy policy"
           onPress={handlePrivacyPolicy}
+          iconBgColor="#dbeafe"
         />
         
         <SettingItem
@@ -208,6 +292,7 @@ const SettingsScreen = ({ navigation }) => {
           title="Terms of Service"
           subtitle="Read terms and conditions"
           onPress={handleTermsOfService}
+          iconBgColor="#f3e8ff"
         />
 
         {/* About */}
@@ -218,6 +303,7 @@ const SettingsScreen = ({ navigation }) => {
           title="About Next eSIM"
           subtitle="App version and information"
           onPress={handleAbout}
+          iconBgColor="#ecfdf5"
         />
         
         <SettingItem
@@ -225,13 +311,14 @@ const SettingsScreen = ({ navigation }) => {
           title="Rate App"
           subtitle="Rate us on the app store"
           onPress={() => Alert.alert('Rate App', 'Thank you for considering rating our app!')}
+          iconBgColor="#fef3c7"
         />
 
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>Next eSIM v1.0.0</Text>
           <Text style={styles.footerSubtext}>
-            Developed with ❤️ for seamless connectivity
+            Developed with care for seamless connectivity
           </Text>
         </View>
       </ScrollView>
@@ -257,6 +344,66 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'white',
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  profileLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  profileAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#dc2626',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  profileAvatarText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  profileInfo: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  profileEmail: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  guestBadge: {
+    backgroundColor: '#f59e0b',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
+  guestBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: 'white',
   },
   sectionHeader: {
     fontSize: 16,
@@ -287,7 +434,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#fee2e2',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -328,4 +474,3 @@ const styles = StyleSheet.create({
 });
 
 export default SettingsScreen;
-              

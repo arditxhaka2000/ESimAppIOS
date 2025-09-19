@@ -33,96 +33,59 @@ export const AuthProvider = ({ children }) => {
     }
 
     initializeAuth();
-    
-    const authListener = authService.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state changed:', event, session);
-        
-        try {
-          if (event === 'SIGNED_IN' && session) {
-            await handleSignIn(session);
-          } else if (event === 'SIGNED_OUT') {
-            handleSignOut();
-          } else if (event === 'TOKEN_REFRESHED' && session) {
-            await handleTokenRefresh(session);
-          }
-        } catch (error) {
-          console.error('Auth state change error:', error);
-        }
-      }
-    );
-
-    return () => {
-      if (authListener?.data?.subscription) {
-        authListener.data.subscription.unsubscribe();
-      }
-    };
   }, [authService]);
 
   const initializeAuth = async () => {
-    if (!authService) return;
+    if (!authService) {
+      setLoading(false);
+      return;
+    }
     
     try {
       setLoading(true);
+      console.log('Initializing authentication...');
       
+      // Check if user is authenticated
       const isAuth = await authService.isAuthenticated();
       
       if (isAuth) {
-        const storedUser = await authService.getStoredUser();
-        const storedProfile = await authService.getStoredProfile();
+        console.log('User is authenticated, loading stored data...');
+        
+        // Get stored user data
+        const [storedUser, storedProfile] = await Promise.all([
+          authService.getStoredUser(),
+          authService.getStoredProfile()
+        ]);
         
         if (storedUser && storedProfile) {
+          console.log('Stored data loaded successfully:', {
+            userEmail: storedUser.email,
+            profileName: storedProfile.full_name
+          });
+          
           setUser(storedUser);
           setProfile(storedProfile);
           setIsAuthenticated(true);
           
-          refreshProfile();
+          // Refresh profile in background (don't wait for it)
+          setTimeout(() => {
+            refreshProfile();
+          }, 2000);
         } else {
-          await authService.logout();
+          console.log('Missing stored data, clearing authentication');
+          await authService.clearSession();
           setIsAuthenticated(false);
         }
       } else {
+        console.log('User is not authenticated');
         setIsAuthenticated(false);
       }
     } catch (error) {
       console.error('Initialize auth error:', error);
       setIsAuthenticated(false);
+      await authService.clearSession();
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSignIn = async (session) => {
-    try {
-      const storedUser = await authService.getStoredUser();
-      const storedProfile = await authService.getStoredProfile();
-      
-      if (storedUser && storedProfile) {
-        setUser(storedUser);
-        setProfile(storedProfile);
-        setIsAuthenticated(true);
-      }
-    } catch (error) {
-      console.error('Handle sign in error:', error);
-    }
-  };
-
-  const handleSignOut = async () => {
-    setUser(null);
-    setProfile(null);
-    setIsAuthenticated(false);
-  };
-
-  const handleTokenRefresh = async (session) => {
-    try {
-      const storedUser = await authService.getStoredUser();
-      const storedProfile = await authService.getStoredProfile();
-      
-      if (session && storedUser && storedProfile) {
-        await authService.storeSession(session, storedUser, storedProfile);
-      }
-    } catch (error) {
-      console.error('Handle token refresh error:', error);
     }
   };
 
@@ -133,15 +96,20 @@ export const AuthProvider = ({ children }) => {
     
     try {
       setLoading(true);
+      console.log('Starting login process...');
       
       const result = await authService.login(email, password);
       
       if (result.success) {
+        console.log('Login successful, updating context state...');
         setUser(result.user);
         setProfile(result.profile);
         setIsAuthenticated(true);
+        
+        console.log('Context state updated successfully');
         return { success: true };
       } else {
+        console.log('Login failed:', result.error);
         return { success: false, error: result.error };
       }
     } catch (error) {
@@ -177,13 +145,16 @@ export const AuthProvider = ({ children }) => {
     
     try {
       setLoading(true);
+      console.log('Starting logout process...');
       
       const result = await authService.logout();
       
       if (result.success) {
+        console.log('Logout successful, clearing context state...');
         setUser(null);
         setProfile(null);
         setIsAuthenticated(false);
+        console.log('Context state cleared');
       }
       
       return result;
@@ -215,16 +186,21 @@ export const AuthProvider = ({ children }) => {
   };
 
   const refreshProfile = async () => {
-    if (!authService) {
-      return { success: false, error: 'Authentication service not available' };
+    if (!authService || !isAuthenticated) {
+      return { success: false, error: 'Not authenticated' };
     }
     
     try {
+      console.log('Refreshing profile...');
       const result = await authService.getProfile();
       
       if (result.success) {
+        console.log('Profile refreshed successfully');
         setProfile(result.profile);
         return { success: true, profile: result.profile };
+      } else if (result.error && (result.error.includes('Unauthorized') || result.error.includes('Invalid'))) {
+        console.log('Session expired during profile refresh, logging out...');
+        await logout();
       }
       
       return result;
@@ -249,18 +225,21 @@ export const AuthProvider = ({ children }) => {
   };
 
   const loginAsGuest = async () => {
-    try {
-      setLoading(true);
-      
-      const result = await login('ronhoxha333@gmail.com', 'N8PtkcaQ6A');
-      return result;
-    } catch (error) {
-      console.error('Guest login error:', error);
-      return { success: false, error: error.message };
-    } finally {
-      setLoading(false);
-    }
+    console.log('Attempting guest login...');
+    return await login('ronhoxha333@gmail.com', 'N8PtkcaQ6A');
   };
+
+  // Debug logging
+  useEffect(() => {
+    console.log('Auth Context State Changed:', {
+      isAuthenticated,
+      hasUser: !!user,
+      hasProfile: !!profile,
+      userEmail: user?.email,
+      profileName: profile?.full_name,
+      loading
+    });
+  }, [isAuthenticated, user, profile, loading]);
 
   const value = {
     user,

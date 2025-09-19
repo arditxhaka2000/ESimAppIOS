@@ -1,5 +1,4 @@
-// screens/HomeScreen.js - Updated version with proper authentication
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +17,7 @@ import { useApi } from '../context/ApiContext';
 import CountriesModal from '../components/CountriesModal';
 import PaymentModal from '../components/PaymentModal';
 import ESimSuccessModal from '../screens/ESimSuccessModal';
+import LoadingScreen from '../screens/LoadingScreen';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -28,7 +28,6 @@ const HomeScreen = ({ navigation }) => {
     userEmail,
     profile,
     loading: authLoading,
-    loginAsGuest 
   } = useAuth();
   
   const {
@@ -36,8 +35,6 @@ const HomeScreen = ({ navigation }) => {
     fetchCountries,
     fetchContinents,
     checkDeviceCompatibility,
-    purchasePackage,
-    purchaseDataOnlyPackage,
     isLoading,
     error,
   } = useApi();
@@ -49,14 +46,14 @@ const HomeScreen = ({ navigation }) => {
   const [continents, setContinents] = useState([]);
   const [deviceCompatibility, setDeviceCompatibility] = useState('Checking device...');
   const [refreshing, setRefreshing] = useState(false);
+  const [apiDataLoading, setApiDataLoading] = useState(true);
+  const [dataLoadAttempted, setDataLoadAttempted] = useState(false);
   
-  // Modal states
   const [coverageModalVisible, setCoverageModalVisible] = useState(false);
   const [selectedPackageCountries, setSelectedPackageCountries] = useState(null);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [selectedPackageForPurchase, setSelectedPackageForPurchase] = useState(null);
   
-  // Success modal states
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [esimData, setESimData] = useState(null);
   const [customerData, setCustomerData] = useState(null);
@@ -75,48 +72,58 @@ const HomeScreen = ({ navigation }) => {
   ];
 
   useEffect(() => {
+    if (!dataLoadAttempted) {
+      loadInitialData();
+    }
+  }, [dataLoadAttempted]);
+
+  useEffect(() => {
     if (isAuthenticated) {
-      initializeData();
       checkDeviceCompatibilityStatus();
     }
   }, [isAuthenticated]);
 
-  const initializeData = async () => {
-    if (!isAuthenticated) {
-      // Auto-login as guest for now, but you can redirect to login
-      await handleGuestLogin();
-    } else {
-      await loadData();
-    }
-  };
-
-  const handleGuestLogin = async () => {
+  const loadInitialData = async () => {
     try {
-      const result = await loginAsGuest();
-      if (!result.success) {
-        // Redirect to login screen if guest login fails
-        navigation.navigate('Login');
-      }
-    } catch (error) {
-      console.error('Guest login failed:', error);
-      navigation.navigate('Login');
-    }
-  };
-
-  const loadData = async () => {
-    try {
+      setApiDataLoading(true);
+      setDataLoadAttempted(true);
+      console.log('Starting API data loading...');
+      
+      const startTime = Date.now();
+      
       const [packagesData, countriesData, continentsData] = await Promise.all([
         fetchGlobalPackages(),
         fetchCountries(),
         fetchContinents(),
       ]);
 
+      console.log('API data received:', {
+        packages: packagesData.length,
+        countries: countriesData.length,
+        continents: continentsData.length
+      });
+
       setSpecialPackages(packagesData.slice(0, 6));
       setCountries(countriesData.sort((a, b) => a.name.localeCompare(b.name)));
       setContinents(continentsData);
+      
+      // Ensure minimum loading time for better UX
+      const elapsedTime = Date.now() - startTime;
+      const remainingTime = Math.max(0, 1500 - elapsedTime);
+      
+      setTimeout(() => {
+        setApiDataLoading(false);
+        console.log('API loading completed');
+      }, remainingTime);
+      
     } catch (error) {
-      console.error('Error loading data:', error);
-      Alert.alert('Error', 'Failed to load data. Please try again.');
+      console.error('Error loading API data:', error);
+      
+      // Still hide loading after error
+      setTimeout(() => {
+        setApiDataLoading(false);
+        Alert.alert('Error', 'Failed to load data. Please try again.');
+      }, 1500);
     }
   };
 
@@ -124,7 +131,6 @@ const HomeScreen = ({ navigation }) => {
     try {
       setDeviceCompatibility('Checking device compatibility...');
       
-      // Get device IMEI (this might require additional permissions)
       const imei = await getDeviceIMEI();
       
       if (imei) {
@@ -149,8 +155,6 @@ const HomeScreen = ({ navigation }) => {
 
   const getDeviceIMEI = async () => {
     try {
-      // Note: Getting IMEI requires special permissions on Android
-      // For demo purposes, using a placeholder
       return '356303489131464';
     } catch (error) {
       console.error('Error getting IMEI:', error);
@@ -160,7 +164,8 @@ const HomeScreen = ({ navigation }) => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    setDataLoadAttempted(false); // Reset to trigger reload
+    await loadInitialData();
     setRefreshing(false);
   };
 
@@ -187,22 +192,29 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const handlePackagePurchase = (packageItem) => {
+    if (!isAuthenticated) {
+      Alert.alert(
+        'Login Required',
+        'You need to log in to purchase packages.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Login', onPress: () => navigation.navigate('Login') }
+        ]
+      );
+      return;
+    }
+    
     setSelectedPackageForPurchase(packageItem);
     setPaymentModalVisible(true);
   };
 
-  // New success handler for the payment modal
   const handlePurchaseSuccess = (esimResult, custData) => {
     console.log('Purchase success in HomeScreen:', { esimResult, custData });
     
-    // Close payment modal first
     setPaymentModalVisible(false);
-    
-    // Set success modal data
     setESimData(esimResult);
     setCustomerData(custData);
     
-    // Show success modal after a brief delay
     setTimeout(() => {
       setShowSuccessModal(true);
     }, 300);
@@ -230,17 +242,6 @@ const HomeScreen = ({ navigation }) => {
       Alert.alert('Coverage', 'Coverage information not available');
     }
   };
-
-  const renderPromoBanner = ({ item, index }) => (
-    <View style={styles.promoBanner}>
-      <View style={styles.promoOverlay}>
-        <Text style={styles.promoTitle}>{item.title}</Text>
-        <View style={styles.promoSubtitleContainer}>
-          <Text style={styles.promoSubtitle}>{item.subtitle}</Text>
-        </View>
-      </View>
-    </View>
-  );
 
   const renderPackageCard = (packageItem) => (
     <View key={packageItem.id} style={styles.packageCard}>
@@ -272,11 +273,17 @@ const HomeScreen = ({ navigation }) => {
         </View>
 
         <TouchableOpacity 
-          style={styles.buyButton}
+          style={[
+            styles.buyButton,
+            !isAuthenticated && styles.buyButtonDisabled
+          ]}
           onPress={() => handlePackagePurchase(packageItem)}
         >
-          <Text style={styles.buyButtonText}>
-            Buy - ${packageItem.display_price || packageItem.price}
+          <Text style={[
+            styles.buyButtonText,
+            !isAuthenticated && styles.buyButtonTextDisabled
+          ]}>
+            {!isAuthenticated ? 'Login to Buy' : `Buy - $${packageItem.display_price || packageItem.price}`}
           </Text>
         </TouchableOpacity>
       </View>
@@ -336,6 +343,11 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
+  // Show loading screen while API data is being fetched
+  if (apiDataLoading) {
+    return <LoadingScreen />;
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#dc2626" />
@@ -346,7 +358,6 @@ const HomeScreen = ({ navigation }) => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Header Section */}
         <View style={styles.header}>
           <View style={styles.logoContainer}>
             <Text style={styles.logoNext}>Next</Text>
@@ -361,7 +372,20 @@ const HomeScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* User Info Bar (if authenticated) */}
+        {!isAuthenticated && (
+          <View style={styles.loginPrompt}>
+            <Text style={styles.loginPromptText}>
+              View packages and coverage. Login to purchase eSIMs.
+            </Text>
+            <TouchableOpacity 
+              style={styles.loginPromptButton} 
+              onPress={handleLogin}
+            >
+              <Text style={styles.loginPromptButtonText}>Login</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {isAuthenticated && (
           <View style={styles.userInfoBar}>
             <Text style={styles.welcomeText}>Welcome back, {userDisplayName}!</Text>
@@ -369,7 +393,6 @@ const HomeScreen = ({ navigation }) => {
           </View>
         )}
 
-        {/* Search Bar */}
         <View style={styles.searchContainer}>
           <View style={styles.searchBar}>
             <TextInput
@@ -385,7 +408,6 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </View>
 
-        {/* Promotional Banner */}
         <ScrollView
           horizontal
           pagingEnabled
@@ -404,7 +426,6 @@ const HomeScreen = ({ navigation }) => {
           ))}
         </ScrollView>
 
-        {/* Tab Navigation */}
         <View style={styles.tabContainer}>
           <View style={styles.tabRow}>
             {['PAKO', 'SHTETET', 'RAJONET'].map((tab) => (
@@ -429,31 +450,33 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </View>
 
-        {/* Tab Content */}
         {renderTabContent()}
       </ScrollView>
 
-      {/* Modals */}
       <CountriesModal
         visible={coverageModalVisible}
         countries={selectedPackageCountries}
         onClose={() => setCoverageModalVisible(false)}
       />
       
-      <PaymentModal
-        visible={paymentModalVisible}
-        package={selectedPackageForPurchase}
-        onClose={() => setPaymentModalVisible(false)}
-        onPurchaseSuccess={handlePurchaseSuccess}
-      />
+      {isAuthenticated && (
+        <PaymentModal
+          visible={paymentModalVisible}
+          package={selectedPackageForPurchase}
+          onClose={() => setPaymentModalVisible(false)}
+          onPurchaseSuccess={handlePurchaseSuccess}
+        />
+      )}
 
-      <ESimSuccessModal
-        visible={showSuccessModal}
-        onClose={handleSuccessModalClose}
-        esimData={esimData}
-        customerData={customerData}
-        packageData={selectedPackageForPurchase}
-      />
+      {isAuthenticated && (
+        <ESimSuccessModal
+          visible={showSuccessModal}
+          onClose={handleSuccessModalClose}
+          esimData={esimData}
+          customerData={customerData}
+          packageData={selectedPackageForPurchase}
+        />
+      )}
     </View>
   );
 };
@@ -508,6 +531,33 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#dc2626',
     maxWidth: 100,
+  },
+  loginPrompt: {
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fecaca',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  loginPromptText: {
+    fontSize: 14,
+    color: '#dc2626',
+    flex: 1,
+    marginRight: 12,
+  },
+  loginPromptButton: {
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  loginPromptButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   userInfoBar: {
     backgroundColor: '#fef2f2',
@@ -691,11 +741,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginLeft: 8,
   },
+  buyButtonDisabled: {
+    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
   buyButtonText: {
     fontSize: 14,
     fontWeight: 'bold',
     color: '#dc2626',
     textAlign: 'center',
+  },
+  buyButtonTextDisabled: {
+    color: '#6b7280',
   },
   countryItem: {
     flexDirection: 'row',

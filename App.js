@@ -3,24 +3,21 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { MaterialIcons as Icon } from '@expo/vector-icons';
-import { StatusBar, StyleSheet } from 'react-native';
+import { StatusBar, StyleSheet, ActivityIndicator, View } from 'react-native';
 import { StripeProvider } from '@stripe/stripe-react-native';
 
-// Services
 import { AuthService } from './src/services/AuthService';
 import { GloesimApiService } from './src/services/GloesimApiService';
 import { SecureStorageService } from './src/services/SecureStorageService';
 
-// Screens
 import HomeScreen from './src/screens/HomeScreen';
 import CountriesScreen from './src/screens/CountriesScreen';
 import MyESimsScreen from './src/screens/MyESimsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CountryPackagesScreen from './src/screens/CountryPackagesScreen';
-import LoginScreen from './src/screens/LoginScreen'; // Add this import
-import ProfileScreen from './src/screens/ProfileScreen'; // Add this import
+import LoginScreen from './src/screens/LoginScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 
-// Context
 import { ApiProvider } from './src/context/ApiContext';
 import { AuthProvider } from './src/context/AuthContext';
 
@@ -104,7 +101,6 @@ const TabNavigator = () => (
   </Tab.Navigator>
 );
 
-// Main Stack Navigator (add this)
 const MainNavigator = () => (
   <Stack.Navigator screenOptions={{ headerShown: false }}>
     <Stack.Screen name="Main" component={TabNavigator} />
@@ -119,9 +115,12 @@ const App = () => {
   useEffect(() => {
     const initializeApp = async () => {
       try {
-        // Initialize services
+        console.log('Initializing app services...');
+        
         await SecureStorageService.initialize();
         await AuthService.initialize();
+        
+        console.log('App services initialized successfully');
         setIsInitialized(true);
       } catch (error) {
         console.error('App initialization error:', error);
@@ -133,7 +132,11 @@ const App = () => {
   }, []);
 
   if (!isInitialized) {
-    return null;
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#dc2626" />
+      </View>
+    );
   }
 
   return (
@@ -153,5 +156,14 @@ const App = () => {
     </StripeProvider>
   );
 };
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'white',
+  },
+});
 
 export default App;

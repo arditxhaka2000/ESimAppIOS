@@ -13,11 +13,12 @@ import {
   Dimensions,
 } from 'react-native';
 import { MaterialIcons as Icon } from '@expo/vector-icons';
-import AuthService from '../services/AuthService';
+import { useAuth } from '../context/AuthContext';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-const LoginScreen = ({ navigation, onLoginSuccess }) => {
+const LoginScreen = ({ navigation, route }) => {
+  const { login, register, resetPassword } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     email: '',
@@ -30,8 +31,6 @@ const LoginScreen = ({ navigation, onLoginSuccess }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const authService = AuthService.getInstance();
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
@@ -84,24 +83,31 @@ const LoginScreen = ({ navigation, onLoginSuccess }) => {
 
     setLoading(true);
     try {
-      const result = await authService.login(formData.email, formData.password);
+      console.log('Attempting login...');
+      const result = await login(formData.email, formData.password);
 
       if (result.success) {
+        console.log('Login successful, navigating back...');
+        
         Alert.alert('Success', 'Login successful!', [
           {
             text: 'OK',
             onPress: () => {
-              if (onLoginSuccess) {
-                onLoginSuccess(result.user, result.profile);
+              // Navigate back to the previous screen or to Home
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate('Main');
               }
-              navigation.navigate('Home');
             },
           },
         ]);
       } else {
-        Alert.alert('Login Failed', result.error);
+        console.log('Login failed:', result.error);
+        Alert.alert('Login Failed', result.error || 'Please check your credentials');
       }
     } catch (error) {
+      console.error('Login error:', error);
       Alert.alert('Error', 'An unexpected error occurred');
     } finally {
       setLoading(false);
@@ -113,7 +119,7 @@ const LoginScreen = ({ navigation, onLoginSuccess }) => {
 
     setLoading(true);
     try {
-      const result = await authService.register({
+      const result = await register({
         email: formData.email,
         password: formData.password,
         fullName: formData.fullName,
@@ -122,7 +128,7 @@ const LoginScreen = ({ navigation, onLoginSuccess }) => {
       });
 
       if (result.success) {
-        Alert.alert('Success', result.message || 'Registration successful!', [
+        Alert.alert('Success', result.message || 'Registration successful! Please check your email to verify your account.', [
           {
             text: 'OK',
             onPress: () => setIsLogin(true),
@@ -138,7 +144,7 @@ const LoginScreen = ({ navigation, onLoginSuccess }) => {
     }
   };
 
-  const handleForgotPassword = () => {
+  const handleForgotPassword = async () => {
     if (!formData.email.trim()) {
       Alert.alert('Error', 'Please enter your email address first');
       return;
@@ -154,7 +160,7 @@ const LoginScreen = ({ navigation, onLoginSuccess }) => {
           onPress: async () => {
             setLoading(true);
             try {
-              const result = await authService.resetPassword(formData.email);
+              const result = await resetPassword(formData.email);
               if (result.success) {
                 Alert.alert('Success', result.message);
               } else {
@@ -244,6 +250,19 @@ const LoginScreen = ({ navigation, onLoginSuccess }) => {
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         {/* Header */}
         <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate('Main');
+              }
+            }}
+          >
+            <Icon name="arrow-back" size={24} color="#dc2626" />
+          </TouchableOpacity>
+          
           <View style={styles.logoContainer}>
             <Text style={styles.logoNext}>Next</Text>
             <Text style={styles.logoESim}>eSim</Text>
@@ -354,9 +373,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 40,
   },
+  backButton: {
+    position: 'absolute',
+    top: 40,
+    left: 20,
+    zIndex: 1,
+    padding: 8,
+  },
   header: {
     alignItems: 'center',
     marginBottom: 40,
+    paddingTop: 40,
   },
   logoContainer: {
     flexDirection: 'row',
