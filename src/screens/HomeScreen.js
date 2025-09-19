@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,19 +17,25 @@ import { useApi } from '../context/ApiContext';
 import CountriesModal from '../components/CountriesModal';
 import PaymentModal from '../components/PaymentModal';
 import ESimSuccessModal from '../screens/ESimSuccessModal';
-import LoadingScreen from '../screens/LoadingScreen';
 
 const { width: screenWidth } = Dimensions.get('window');
 
+// Global data storage to persist across remounts
+let globalDataLoaded = false;
+let globalPackages = [];
+let globalCountries = [];
+let globalContinents = [];
+
 const HomeScreen = ({ navigation }) => {
-  const { 
-    isAuthenticated, 
-    userDisplayName, 
+  const {
+    isAuthenticated,
+    userDisplayName,
     userEmail,
     profile,
     loading: authLoading,
+    setIsGlobalLoading,
   } = useAuth();
-  
+
   const {
     fetchGlobalPackages,
     fetchCountries,
@@ -39,21 +45,22 @@ const HomeScreen = ({ navigation }) => {
     error,
   } = useApi();
 
+  // Use ref to track loading state to prevent re-runs
+  const hasStartedLoading = useRef(false);
+
   const [searchText, setSearchText] = useState('');
   const [selectedTab, setSelectedTab] = useState('PAKO');
-  const [specialPackages, setSpecialPackages] = useState([]);
-  const [countries, setCountries] = useState([]);
-  const [continents, setContinents] = useState([]);
+  const [specialPackages, setSpecialPackages] = useState(globalPackages);
+  const [countries, setCountries] = useState(globalCountries);
+  const [continents, setContinents] = useState(globalContinents);
   const [deviceCompatibility, setDeviceCompatibility] = useState('Checking device...');
   const [refreshing, setRefreshing] = useState(false);
-  const [apiDataLoading, setApiDataLoading] = useState(true);
-  const [dataLoadAttempted, setDataLoadAttempted] = useState(false);
-  
+
   const [coverageModalVisible, setCoverageModalVisible] = useState(false);
   const [selectedPackageCountries, setSelectedPackageCountries] = useState(null);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [selectedPackageForPurchase, setSelectedPackageForPurchase] = useState(null);
-  
+
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [esimData, setESimData] = useState(null);
   const [customerData, setCustomerData] = useState(null);
@@ -71,11 +78,13 @@ const HomeScreen = ({ navigation }) => {
     },
   ];
 
+  // Only load data once when auth is complete and we haven't loaded yet
   useEffect(() => {
-    if (!dataLoadAttempted) {
+    if (!authLoading && !globalDataLoaded && !hasStartedLoading.current) {
+      hasStartedLoading.current = true;
       loadInitialData();
     }
-  }, [dataLoadAttempted]);
+  }, [authLoading]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -84,55 +93,103 @@ const HomeScreen = ({ navigation }) => {
   }, [isAuthenticated]);
 
   const loadInitialData = async () => {
+    if (globalDataLoaded) {
+      console.log('Data already loaded globally, skipping API calls');
+      setIsGlobalLoading(false);
+      return;
+    }
+
     try {
-      setApiDataLoading(true);
-      setDataLoadAttempted(true);
-      console.log('Starting API data loading...');
-      
-      const startTime = Date.now();
-      
+      console.log('Starting initial API data loading...');
+      setIsGlobalLoading(true);
+
       const [packagesData, countriesData, continentsData] = await Promise.all([
-        fetchGlobalPackages(),
-        fetchCountries(),
-        fetchContinents(),
+        fetchGlobalPackages().catch(err => {
+          console.error('Packages fetch error:', err);
+          return [];
+        }),
+        fetchCountries().catch(err => {
+          console.error('Countries fetch error:', err);
+          return [];
+        }),
+        fetchContinents().catch(err => {
+          console.error('Continents fetch error:', err);
+          return [];
+        }),
       ]);
 
       console.log('API data received:', {
-        packages: packagesData.length,
-        countries: countriesData.length,
-        continents: continentsData.length
+        packages: packagesData?.length || 0,
+        countries: countriesData?.length || 0,
+        continents: continentsData?.length || 0
       });
 
-      setSpecialPackages(packagesData.slice(0, 6));
-      setCountries(countriesData.sort((a, b) => a.name.localeCompare(b.name)));
-      setContinents(continentsData);
+      const packages = packagesData?.slice(0, 6) || [];
+      const sortedCountries = countriesData?.sort((a, b) => a.name.localeCompare(b.name)) || [];
+      const continents = continentsData || [];
       
-      // Ensure minimum loading time for better UX
-      const elapsedTime = Date.now() - startTime;
-      const remainingTime = Math.max(0, 1500 - elapsedTime);
+      console.log('Setting state with data:', {
+        packages: packages.length,
+        countries: sortedCountries.length,
+        continents: continents.length
+      });
       
+      // Store data globally first
+      globalPackages = packages;
+      globalCountries = sortedCountries;
+      globalContinents = continents;
+      globalDataLoaded = true;
+      
+      // Then update local state
+      setSpecialPackages(packages);
+      setCountries(sortedCountries);
+      setContinents(continents);
+
+      // Stop loading after a short delay
       setTimeout(() => {
-        setApiDataLoading(false);
-        console.log('API loading completed');
-      }, remainingTime);
-      
+        setIsGlobalLoading(false);
+        console.log('Initial loading completed - hiding LoadingScreen');
+      }, 1000);
+
     } catch (error) {
-      console.error('Error loading API data:', error);
+      console.error('Error loading initial data:', error);
+      globalDataLoaded = true; // Still mark as loaded to prevent retries
       
-      // Still hide loading after error
       setTimeout(() => {
-        setApiDataLoading(false);
-        Alert.alert('Error', 'Failed to load data. Please try again.');
-      }, 1500);
+        setIsGlobalLoading(false);
+      }, 500);
+      
+      Alert.alert('Error', 'Failed to load some data. Please try again.');
+    }
+  };
+
+  const loadDataForRefresh = async () => {
+    try {
+      console.log('Refreshing data...');
+
+      const [packagesData, countriesData, continentsData] = await Promise.all([
+        fetchGlobalPackages().catch(() => []),
+        fetchCountries().catch(() => []),
+        fetchContinents().catch(() => []),
+      ]);
+
+      setSpecialPackages(packagesData?.slice(0, 6) || []);
+      setCountries(countriesData?.sort((a, b) => a.name.localeCompare(b.name)) || []);
+      setContinents(continentsData || []);
+
+      console.log('Refresh completed');
+    } catch (error) {
+      console.error('Refresh error:', error);
+      Alert.alert('Error', 'Failed to refresh data. Please try again.');
     }
   };
 
   const checkDeviceCompatibilityStatus = async () => {
     try {
       setDeviceCompatibility('Checking device compatibility...');
-      
+
       const imei = await getDeviceIMEI();
-      
+
       if (imei) {
         const response = await checkDeviceCompatibility(imei);
         if (response) {
@@ -164,8 +221,7 @@ const HomeScreen = ({ navigation }) => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setDataLoadAttempted(false); // Reset to trigger reload
-    await loadInitialData();
+    await loadDataForRefresh();
     setRefreshing(false);
   };
 
@@ -203,18 +259,18 @@ const HomeScreen = ({ navigation }) => {
       );
       return;
     }
-    
+
     setSelectedPackageForPurchase(packageItem);
     setPaymentModalVisible(true);
   };
 
   const handlePurchaseSuccess = (esimResult, custData) => {
     console.log('Purchase success in HomeScreen:', { esimResult, custData });
-    
+
     setPaymentModalVisible(false);
     setESimData(esimResult);
     setCustomerData(custData);
-    
+
     setTimeout(() => {
       setShowSuccessModal(true);
     }, 300);
@@ -264,7 +320,7 @@ const HomeScreen = ({ navigation }) => {
           <Text style={styles.featureLabel}>Tether / Hotspot</Text>
           <Text style={styles.featureValue}>Yes</Text>
         </View>
-        
+
         <View style={styles.featureItem}>
           <Text style={styles.featureLabel}>Coverage</Text>
           <TouchableOpacity onPress={() => handleViewCoverage(packageItem)}>
@@ -272,7 +328,7 @@ const HomeScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
             styles.buyButton,
             !isAuthenticated && styles.buyButtonDisabled
@@ -290,37 +346,61 @@ const HomeScreen = ({ navigation }) => {
     </View>
   );
 
+  // Debug logging for state changes
+  useEffect(() => {
+    console.log('HomeScreen state updated:', {
+      packages: specialPackages.length,
+      countries: countries.length,
+      continents: continents.length,
+      globalDataLoaded
+    });
+  }, [specialPackages, countries, continents]);
+
   const renderTabContent = () => {
+    console.log('Rendering tab content:', selectedTab, {
+      packages: specialPackages.length,
+      countries: countries.length,
+      continents: continents.length
+    });
+    
     switch (selectedTab) {
       case 'PAKO':
         return (
           <View style={styles.tabContent}>
             <Text style={styles.debugText}>Packages: {specialPackages.length}</Text>
-            {specialPackages.map(renderPackageCard)}
+            {specialPackages.length === 0 ? (
+              <Text style={styles.debugText}>No packages loaded yet...</Text>
+            ) : (
+              specialPackages.map(renderPackageCard)
+            )}
           </View>
         );
-      
+
       case 'SHTETET':
         return (
           <View style={styles.tabContent}>
             <Text style={styles.sectionTitle}>5 Pakot më të kërkuara</Text>
             <Text style={styles.debugText}>Countries: {countries.length}</Text>
-            {countries.map((country) => (
-              <TouchableOpacity
-                key={country.id}
-                style={styles.countryItem}
-                onPress={() => handleCountrySelect(country)}
-              >
-                <Image
-                  source={{ uri: country.image_url }}
-                  style={styles.countryFlag}
-                />
-                <Text style={styles.countryName}>{country.name}</Text>
-              </TouchableOpacity>
-            ))}
+            {countries.length === 0 ? (
+              <Text style={styles.debugText}>No countries loaded yet...</Text>
+            ) : (
+              countries.map((country) => (
+                <TouchableOpacity
+                  key={country.id}
+                  style={styles.countryItem}
+                  onPress={() => handleCountrySelect(country)}
+                >
+                  <Image
+                    source={{ uri: country.image_url }}
+                    style={styles.countryFlag}
+                  />
+                  <Text style={styles.countryName}>{country.name}</Text>
+                </TouchableOpacity>
+              ))
+            )}
           </View>
         );
-      
+
       case 'RAJONET':
         return (
           <View style={styles.tabContent}>
@@ -337,21 +417,16 @@ const HomeScreen = ({ navigation }) => {
             ))}
           </View>
         );
-      
+
       default:
         return null;
     }
   };
 
-  // Show loading screen while API data is being fetched
-  if (apiDataLoading) {
-    return <LoadingScreen />;
-  }
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#dc2626" />
-      
+
       <ScrollView
         style={styles.scrollView}
         refreshControl={
@@ -363,7 +438,7 @@ const HomeScreen = ({ navigation }) => {
             <Text style={styles.logoNext}>Next</Text>
             <Text style={styles.logoESim}>eSim</Text>
           </View>
-          
+
           <TouchableOpacity style={styles.profileButton} onPress={handleProfile}>
             <Text style={styles.profileIcon}>👤</Text>
             <Text style={styles.profileText}>
@@ -377,8 +452,8 @@ const HomeScreen = ({ navigation }) => {
             <Text style={styles.loginPromptText}>
               View packages and coverage. Login to purchase eSIMs.
             </Text>
-            <TouchableOpacity 
-              style={styles.loginPromptButton} 
+            <TouchableOpacity
+              style={styles.loginPromptButton}
               onPress={handleLogin}
             >
               <Text style={styles.loginPromptButtonText}>Login</Text>
@@ -386,12 +461,6 @@ const HomeScreen = ({ navigation }) => {
           </View>
         )}
 
-        {isAuthenticated && (
-          <View style={styles.userInfoBar}>
-            <Text style={styles.welcomeText}>Welcome back, {userDisplayName}!</Text>
-            <Text style={styles.deviceCompatibility}>{deviceCompatibility}</Text>
-          </View>
-        )}
 
         <View style={styles.searchContainer}>
           <View style={styles.searchBar}>
@@ -458,7 +527,7 @@ const HomeScreen = ({ navigation }) => {
         countries={selectedPackageCountries}
         onClose={() => setCoverageModalVisible(false)}
       />
-      
+
       {isAuthenticated && (
         <PaymentModal
           visible={paymentModalVisible}

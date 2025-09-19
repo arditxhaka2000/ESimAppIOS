@@ -15,7 +15,9 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isGlobalLoading, setIsGlobalLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  
   const [authService] = useState(() => {
     try {
       return AuthService.getInstance();
@@ -66,11 +68,6 @@ export const AuthProvider = ({ children }) => {
           setUser(storedUser);
           setProfile(storedProfile);
           setIsAuthenticated(true);
-          
-          // Refresh profile in background (don't wait for it)
-          setTimeout(() => {
-            refreshProfile();
-          }, 2000);
         } else {
           console.log('Missing stored data, clearing authentication');
           await authService.clearSession();
@@ -83,7 +80,9 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Initialize auth error:', error);
       setIsAuthenticated(false);
-      await authService.clearSession();
+      if (authService) {
+        await authService.clearSession();
+      }
     } finally {
       setLoading(false);
     }
@@ -237,15 +236,18 @@ export const AuthProvider = ({ children }) => {
       hasProfile: !!profile,
       userEmail: user?.email,
       profileName: profile?.full_name,
-      loading
+      loading,
+      isGlobalLoading
     });
-  }, [isAuthenticated, user, profile, loading]);
+  }, [isAuthenticated, user, profile, loading, isGlobalLoading]);
 
   const value = {
     user,
     profile,
     isAuthenticated,
     loading,
+    isGlobalLoading,       
+    setIsGlobalLoading, 
     login,
     register,
     logout,

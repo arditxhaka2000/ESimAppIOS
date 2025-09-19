@@ -3,11 +3,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { MaterialIcons as Icon } from '@expo/vector-icons';
-import { StatusBar, StyleSheet, ActivityIndicator, View } from 'react-native';
+import { StatusBar } from 'react-native';
 import { StripeProvider } from '@stripe/stripe-react-native';
 
 import { AuthService } from './src/services/AuthService';
-import { GloesimApiService } from './src/services/GloesimApiService';
 import { SecureStorageService } from './src/services/SecureStorageService';
 
 import HomeScreen from './src/screens/HomeScreen';
@@ -17,9 +16,10 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import CountryPackagesScreen from './src/screens/CountryPackagesScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import LoadingScreen from './src/screens/LoadingScreen';
 
 import { ApiProvider } from './src/context/ApiContext';
-import { AuthProvider } from './src/context/AuthContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -78,23 +78,23 @@ const TabNavigator = () => (
       headerShown: false,
     })}
   >
-    <Tab.Screen 
-      name="Home" 
+    <Tab.Screen
+      name="Home"
       component={HomeStack}
       options={{ tabBarLabel: 'Home' }}
     />
-    <Tab.Screen 
-      name="Packages" 
+    <Tab.Screen
+      name="Packages"
       component={PackagesStack}
       options={{ tabBarLabel: 'Packages' }}
     />
-    <Tab.Screen 
-      name="MyeSims" 
+    <Tab.Screen
+      name="MyeSims"
       component={MyESimsScreen}
       options={{ tabBarLabel: 'My eSIMs' }}
     />
-    <Tab.Screen 
-      name="Settings" 
+    <Tab.Screen
+      name="Settings"
       component={SettingsScreen}
       options={{ tabBarLabel: 'Settings' }}
     />
@@ -109,6 +109,28 @@ const MainNavigator = () => (
   </Stack.Navigator>
 );
 
+const AppContent = () => {
+  const { loading, isGlobalLoading } = useAuth();
+  
+  console.log('Loading states:', { loading, isGlobalLoading });
+
+  // Show LoadingScreen until EVERYTHING is ready
+  if (loading || isGlobalLoading) {
+    return <LoadingScreen />;
+  }
+
+  return (
+    <NavigationContainer>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="#dc2626"
+        translucent={false}
+      />
+      <MainNavigator />
+    </NavigationContainer>
+  );
+};
+
 const App = () => {
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -116,14 +138,28 @@ const App = () => {
     const initializeApp = async () => {
       try {
         console.log('Initializing app services...');
-        
-        await SecureStorageService.initialize();
-        await AuthService.initialize();
-        
+
+        // Handle potential missing services
+        try {
+          if (SecureStorageService?.initialize) {
+            await SecureStorageService.initialize();
+          }
+        } catch (error) {
+          console.warn('SecureStorageService init failed:', error.message);
+        }
+
+        try {
+          if (AuthService?.initialize) {
+            await AuthService.initialize();
+          }
+        } catch (error) {
+          console.warn('AuthService init failed:', error.message);
+        }
+
         console.log('App services initialized successfully');
-        setIsInitialized(true);
       } catch (error) {
         console.error('App initialization error:', error);
+      } finally {
         setIsInitialized(true);
       }
     };
@@ -132,38 +168,18 @@ const App = () => {
   }, []);
 
   if (!isInitialized) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#dc2626" />
-      </View>
-    );
+    return <LoadingScreen />;
   }
 
   return (
     <StripeProvider publishableKey="pk_test_51S8H6yAONcgDIAVQ3Lci5NSm3PEJ3q8aoGUNJ2k7Nhp1T3D4yNEq6NbEgriJGU2yDQWEl6OfRhrmwPZcHgjbauGv00rpxbTeUT">
       <AuthProvider>
         <ApiProvider>
-          <NavigationContainer>
-            <StatusBar 
-              barStyle="light-content" 
-              backgroundColor="#dc2626" 
-              translucent={false}
-            />
-            <MainNavigator />
-          </NavigationContainer>
+          <AppContent />
         </ApiProvider>
       </AuthProvider>
     </StripeProvider>
   );
 };
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'white',
-  },
-});
 
 export default App;
