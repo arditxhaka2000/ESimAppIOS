@@ -17,6 +17,8 @@ import { useApi } from '../context/ApiContext';
 import CountriesModal from '../components/CountriesModal';
 import PaymentModal from '../components/PaymentModal';
 import ESimSuccessModal from '../screens/ESimSuccessModal';
+import { LinearGradient } from 'expo-linear-gradient';
+
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -127,19 +129,19 @@ const HomeScreen = ({ navigation }) => {
       const packages = packagesData?.slice(0, 6) || [];
       const sortedCountries = countriesData?.sort((a, b) => a.name.localeCompare(b.name)) || [];
       const continents = continentsData || [];
-      
+
       console.log('Setting state with data:', {
         packages: packages.length,
         countries: sortedCountries.length,
         continents: continents.length
       });
-      
+
       // Store data globally first
       globalPackages = packages;
       globalCountries = sortedCountries;
       globalContinents = continents;
       globalDataLoaded = true;
-      
+
       // Then update local state
       setSpecialPackages(packages);
       setCountries(sortedCountries);
@@ -154,11 +156,11 @@ const HomeScreen = ({ navigation }) => {
     } catch (error) {
       console.error('Error loading initial data:', error);
       globalDataLoaded = true; // Still mark as loaded to prevent retries
-      
+
       setTimeout(() => {
         setIsGlobalLoading(false);
       }, 500);
-      
+
       Alert.alert('Error', 'Failed to load some data. Please try again.');
     }
   };
@@ -300,51 +302,60 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const renderPackageCard = (packageItem) => (
-    <View key={packageItem.id} style={styles.packageCard}>
-      <View style={styles.packageHeader}>
-        <Text style={styles.packageHeaderText}>Data</Text>
-        <Text style={styles.packageHeaderText}>Validity</Text>
-        <Text style={styles.packageHeaderText}>Connectivity</Text>
+  <LinearGradient
+    key={packageItem.id}
+    colors={['#EA384D', '#D31027']}
+    start={{ x: 0, y: 0 }}
+    end={{ x: 1, y: 0 }}
+    style={styles.packageCard}
+  >
+    <View style={styles.packageHeader}>
+      <Text style={styles.packageHeaderText}>Data</Text>
+      <Text style={styles.packageHeaderText}>Validity</Text>
+      <Text style={styles.packageHeaderText}>Connectivity</Text>
+    </View>
+
+    <View style={styles.packageValues}>
+      <Text style={styles.packageValue}>
+        {packageItem.data_quantity === -1 ? 'Unlimited' : `${packageItem.data_quantity}${packageItem.data_unit}`}
+      </Text>
+      <Text style={styles.packageValue}>{packageItem.package_validity} {packageItem.package_validity_unit}s</Text>
+      <Text style={styles.packageValue}>5G</Text>
+    </View>
+
+    <View style={styles.packageFeatures}>
+      <View style={styles.featureItem}>
+        <Text style={styles.featureLabel}>Tether / Hotspot</Text>
+        <Text style={styles.featureValue}>Yes</Text>
       </View>
 
-      <View style={styles.packageValues}>
-        <Text style={styles.packageValue}>
-          {packageItem.data_quantity === -1 ? 'Unlimited' : `${packageItem.data_quantity}${packageItem.data_unit}`}
-        </Text>
-        <Text style={styles.packageValue}>{packageItem.package_validity} {packageItem.package_validity_unit}s</Text>
-        <Text style={styles.packageValue}>5G</Text>
-      </View>
-
-      <View style={styles.packageFeatures}>
-        <View style={styles.featureItem}>
-          <Text style={styles.featureLabel}>Tether / Hotspot</Text>
-          <Text style={styles.featureValue}>Yes</Text>
-        </View>
-
-        <View style={styles.featureItem}>
-          <Text style={styles.featureLabel}>Coverage</Text>
-          <TouchableOpacity onPress={() => handleViewCoverage(packageItem)}>
-            <Text style={[styles.featureValue, styles.coverageLink]}>View</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity
-          style={[
-            styles.buyButton,
-            !isAuthenticated && styles.buyButtonDisabled
-          ]}
-          onPress={() => handlePackagePurchase(packageItem)}
-        >
-          <Text style={[
-            styles.buyButtonText,
-            !isAuthenticated && styles.buyButtonTextDisabled
-          ]}>
-            {!isAuthenticated ? 'Login to Buy' : `Buy - $${packageItem.display_price || packageItem.price}`}
-          </Text>
+      <View style={styles.featureItem}>
+        <Text style={styles.featureLabel}>Coverage</Text>
+        <TouchableOpacity onPress={() => handleViewCoverage(packageItem)}>
+          <Text style={[styles.featureValue, styles.coverageLink]}>View</Text>
         </TouchableOpacity>
       </View>
+
+      <TouchableOpacity
+        style={[
+          styles.buyButton,
+          !isAuthenticated && styles.buyButtonDisabled
+        ]}
+        onPress={() => handlePackagePurchase(packageItem)}
+      >
+        <Text
+          style={[
+            styles.buyButtonText,
+            !isAuthenticated && styles.buyButtonTextDisabled
+          ]}
+        >
+          {!isAuthenticated ? 'Login to Buy' : `Buy - $${packageItem.display_price || packageItem.price}`}
+        </Text>
+      </TouchableOpacity>
     </View>
-  );
+  </LinearGradient>
+);
+
 
   // Debug logging for state changes
   useEffect(() => {
@@ -362,7 +373,7 @@ const HomeScreen = ({ navigation }) => {
       countries: countries.length,
       continents: continents.length
     });
-    
+
     switch (selectedTab) {
       case 'PAKO':
         return (
@@ -434,10 +445,11 @@ const HomeScreen = ({ navigation }) => {
         }
       >
         <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logoNext}>Next</Text>
-            <Text style={styles.logoESim}>eSim</Text>
-          </View>
+          <Image
+            source={require('../assets/logo-red.png')}
+            style={styles.headerLogo}
+            resizeMode="contain"
+          />
 
           <TouchableOpacity style={styles.profileButton} onPress={handleProfile}>
             <Text style={styles.profileIcon}>👤</Text>
@@ -447,22 +459,9 @@ const HomeScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {!isAuthenticated && (
-          <View style={styles.loginPrompt}>
-            <Text style={styles.loginPromptText}>
-              View packages and coverage. Login to purchase eSIMs.
-            </Text>
-            <TouchableOpacity
-              style={styles.loginPromptButton}
-              onPress={handleLogin}
-            >
-              <Text style={styles.loginPromptButtonText}>Login</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-
         <View style={styles.searchContainer}>
+          <Text style={styles.searchTitle}>Where is your NEXT trip?</Text>
+
           <View style={styles.searchBar}>
             <TextInput
               style={styles.searchInput}
@@ -477,18 +476,32 @@ const HomeScreen = ({ navigation }) => {
           </View>
         </View>
 
+
+        {/* ✅ MODIFIED CAROUSEL - ONE BANNER PER SCROLL */}
         <ScrollView
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
+          snapToInterval={screenWidth}
+          decelerationRate="fast"
           style={styles.carouselContainer}
         >
           {promoBanners.map((item, index) => (
-            <View key={index} style={[styles.promoBanner, { width: screenWidth - 40 }]}>
-              <View style={styles.promoOverlay}>
-                <Text style={styles.promoTitle}>{item.title}</Text>
-                <View style={styles.promoSubtitleContainer}>
-                  <Text style={styles.promoSubtitle}>{item.subtitle}</Text>
+            <View
+              key={index}
+              style={styles.carouselPage}
+            >
+              <View style={styles.promoBanner}>
+                <Image
+                  source={item.image}
+                  style={styles.bannerImage}
+                  resizeMode="cover"
+                />
+                <View style={styles.promoOverlay}>
+                  <Text style={styles.promoTitle}>{item.title}</Text>
+                  <View style={styles.promoSubtitleContainer}>
+                    <Text style={styles.promoSubtitle}>{item.subtitle}</Text>
+                  </View>
                 </View>
               </View>
             </View>
@@ -601,50 +614,6 @@ const styles = StyleSheet.create({
     color: '#dc2626',
     maxWidth: 100,
   },
-  loginPrompt: {
-    backgroundColor: '#fef2f2',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#fecaca',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  loginPromptText: {
-    fontSize: 14,
-    color: '#dc2626',
-    flex: 1,
-    marginRight: 12,
-  },
-  loginPromptButton: {
-    backgroundColor: '#dc2626',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-  },
-  loginPromptButtonText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  userInfoBar: {
-    backgroundColor: '#fef2f2',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#fecaca',
-  },
-  welcomeText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#dc2626',
-    marginBottom: 4,
-  },
-  deviceCompatibility: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
   searchContainer: {
     paddingHorizontal: 20,
     paddingBottom: 20,
@@ -676,24 +645,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'white',
   },
+  // ✅ MODIFIED CAROUSEL STYLES
   carouselContainer: {
-    paddingBottom: 20,
+    marginBottom: 20,
+  },
+  carouselPage: {
+    width: screenWidth,
+    paddingHorizontal: 20,
   },
   promoBanner: {
-    height: 120,
-    backgroundColor: '#f3f4f6',
+    height: 180,
     borderRadius: 16,
-    marginHorizontal: 5,
     overflow: 'hidden',
+    position: 'relative',
+  },
+  bannerImage: {
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
   },
   promoOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     padding: 20,
     justifyContent: 'space-between',
   },
   promoTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: 'white',
   },
@@ -842,6 +820,10 @@ const styles = StyleSheet.create({
     height: 24,
     marginRight: 12,
     borderRadius: 2,
+  },
+  headerLogo: {
+    width: 120,
+    height: 40,
   },
 });
 

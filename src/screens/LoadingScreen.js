@@ -6,6 +6,7 @@ import {
   Animated,
   Dimensions,
   StatusBar,
+  Image,
 } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
@@ -89,7 +90,7 @@ const LoadingScreen = () => {
       {/* Background gradient effect */}
       <View style={styles.backgroundGradient} />
       
-      {/* Logo container */}
+      {/* Logo Image Only */}
       <Animated.View
         style={[
           styles.logoContainer,
@@ -101,10 +102,12 @@ const LoadingScreen = () => {
           },
         ]}
       >
-        <View style={styles.logoWrapper}>
-          <Text style={styles.logoNext}>Next</Text>
-          <Text style={styles.logoESim}>eSim</Text>
-        </View>
+        {/* ✅ TRY THIS PATH FIRST */}
+        <Image 
+          source={require('../assets/logo.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
       </Animated.View>
 
       {/* Loading indicator */}
@@ -177,34 +180,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 60,
   },
-  logoWrapper: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    backgroundColor: 'white',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  logoNext: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: '#dc2626',
-    letterSpacing: -1,
-  },
-  logoESim: {
-    fontSize: 20,
-    color: '#6b7280',
-    marginLeft: 6,
-    marginBottom: 8,
-    fontWeight: '500',
+  logoImage: {
+    width: 200,
+    height: 200,
   },
   loadingContainer: {
     alignItems: 'center',

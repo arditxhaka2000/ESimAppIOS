@@ -10,6 +10,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { MaterialIcons as Icon } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useApi } from '../context/ApiContext';
 
 const CountryPackagesScreen = ({ navigation, route }) => {
@@ -74,22 +75,21 @@ const CountryPackagesScreen = ({ navigation, route }) => {
     <View style={styles.packageCard}>
       <View style={styles.packageHeader}>
         <Text style={styles.packageName}>{item.name}</Text>
-        {/* <Text style={styles.packagePrice}>${item.display_price || item.price}</Text> */}
       </View>
 
       <View style={styles.packageDetails}>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Data:</Text>
-            <Text style={styles.detailValue}>
-              {item.data_quantity === -1 ? 'Unlimited' : `${item.data_quantity}${item.data_unit}`}
-            </Text>
-          </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Data:</Text>
+          <Text style={styles.detailValue}>
+            {item.data_quantity === -1 ? 'Unlimited' : `${item.data_quantity}${item.data_unit}`}
+          </Text>
+        </View>
 
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Validity:</Text>
-            <Text style={styles.detailValue}>{item.package_validity} {item.package_validity_unit}s</Text>
-          </View>
-        
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Validity:</Text>
+          <Text style={styles.detailValue}>{item.package_validity} {item.package_validity_unit}s</Text>
+        </View>
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Type:</Text>
           <Text style={styles.detailValue}>{item.package_type || 'Standard'}</Text>
@@ -103,32 +103,39 @@ const CountryPackagesScreen = ({ navigation, route }) => {
         )}
       </View>
 
-      <TouchableOpacity 
-        style={styles.buyButton}
-        onPress={() => handlePackagePurchase(item)}
-      >
-        <Text style={styles.buyButtonText}>
-          Buy Package - ${item.display_price || item.price}
-        </Text>
+      {/* Gradient Button */}
+      <TouchableOpacity onPress={() => handlePackagePurchase(item)} activeOpacity={0.9}>
+        <LinearGradient
+          colors={['#EA384D', '#D31027']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.buyButton}
+        >
+          <Text style={styles.buyButtonText}>
+            Buy Package - ${item.display_price || item.price}
+          </Text>
+        </LinearGradient>
       </TouchableOpacity>
     </View>
   );
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#dc2626" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
+      <StatusBar barStyle="light-content" backgroundColor="#D31027" />
+
+      {/* Gradient Header */}
+      <LinearGradient
+        colors={['#EA384D', '#D31027']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Icon name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{country.name}</Text>
         <View style={styles.placeholder} />
-      </View>
+      </LinearGradient>
 
       {/* Packages List */}
       <FlatList
@@ -137,9 +144,7 @@ const CountryPackagesScreen = ({ navigation, route }) => {
         keyExtractor={(item) => item.id.toString()}
         style={styles.list}
         contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={() => (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>
@@ -169,7 +174,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#dc2626',
     paddingHorizontal: 16,
     paddingVertical: 12,
     paddingTop: 50,
@@ -210,10 +214,7 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
@@ -229,11 +230,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1a1a1a',
     flex: 1,
-  },
-  packagePrice: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#dc2626',
   },
   packageDetails: {
     marginBottom: 20,
@@ -260,7 +256,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   buyButton: {
-    backgroundColor: '#dc2626',
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 24,

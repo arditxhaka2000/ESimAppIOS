@@ -3,7 +3,7 @@ import axios from 'axios';
 export class GloesimApiService {
   static instance = null;
   
-  constructor(useSandbox = true) {
+  constructor(useSandbox = false) {
     this.baseUrl = useSandbox 
       ? 'https://sandbox.gloesim.com/api/' 
       : 'https://gloesim.com/api/';
@@ -11,12 +11,14 @@ export class GloesimApiService {
     this.bearerToken = '';
     this.useSandbox = useSandbox;
     this.isAuthenticated = false;
-    this.isAuthenticating = false;
+    
+    // Use a Promise to track authentication state properly
+    this.authenticationPromise = null;
     
     // Store credentials for auto-authentication
     this.credentials = {
-      email: 'ronhoxha333@gmail.com', // Replace with your actual credentials
-      password: 'N8PtkcaQ6A'  // Replace with your actual credentials
+      email: 'ronhoxha333@gmail.com',
+      password: 'N8PtkcaQ6A'
     };
     
     console.log(`GloeSIM API initialized: ${this.useSandbox ? 'SANDBOX' : 'PRODUCTION'}`);
@@ -42,9 +44,9 @@ export class GloesimApiService {
         }
         
         // Auto-authenticate if not authenticated
-        if (!this.isAuthenticated && !this.isAuthenticating) {
+        if (!this.isAuthenticated) {
           console.log('Not authenticated, attempting auto-login...');
-          await this.autoAuthenticate();
+          await this.ensureAuthenticated();
         }
         
         if (this.bearerToken) {
@@ -75,11 +77,13 @@ export class GloesimApiService {
         if (error.response?.status === 401 && !error.config.url.includes('login')) {
           console.log('401 error, attempting re-authentication...');
           
+          // Reset authentication state
           this.isAuthenticated = false;
           this.bearerToken = '';
+          this.authenticationPromise = null;
           
           // Try to re-authenticate
-          const authSuccess = await this.autoAuthenticate();
+          const authSuccess = await this.ensureAuthenticated();
           
           if (authSuccess && error.config) {
             console.log('Re-authentication successful, retrying original request...');
@@ -105,7 +109,7 @@ export class GloesimApiService {
     );
   }
 
-  static getInstance(useSandbox = true) {
+  static getInstance(useSandbox = false) {
     if (GloesimApiService.instance && GloesimApiService.instance.useSandbox !== useSandbox) {
       console.log('Environment changed, creating new instance');
       GloesimApiService.instance = null;
@@ -124,21 +128,35 @@ export class GloesimApiService {
     console.log('Credentials updated for auto-authentication');
   }
 
-  // Internal auto-authentication method
-  async autoAuthenticate() {
-    if (this.isAuthenticating) {
-      console.log('Authentication already in progress, waiting...');
-      // Wait for current authentication to complete
-      while (this.isAuthenticating) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      return this.isAuthenticated;
+  // Ensure authentication with proper Promise handling to prevent race conditions
+  async ensureAuthenticated() {
+    // If already authenticated, return immediately
+    if (this.isAuthenticated && this.bearerToken) {
+      return true;
     }
 
-    this.isAuthenticating = true;
+    // If authentication is already in progress, wait for it
+    if (this.authenticationPromise) {
+      console.log('Authentication already in progress, waiting for completion...');
+      return await this.authenticationPromise;
+    }
+
+    // Start new authentication
+    this.authenticationPromise = this.performAuthentication();
     
     try {
-      console.log(`Auto-authenticating to ${this.useSandbox ? 'SANDBOX' : 'PRODUCTION'}...`);
+      const result = await this.authenticationPromise;
+      return result;
+    } finally {
+      // Clear the promise regardless of success/failure
+      this.authenticationPromise = null;
+    }
+  }
+
+  // Internal authentication method
+  async performAuthentication() {
+    try {
+      console.log(`Authenticating to ${this.useSandbox ? 'SANDBOX' : 'PRODUCTION'}...`);
       
       const response = await axios.post(`${this.baseUrl}developer/reseller/login`, {
         email: this.credentials.email,
@@ -149,14 +167,14 @@ export class GloesimApiService {
         this.bearerToken = response.data.access_token;
         this.isAuthenticated = true;
         
-        console.log('Auto-authentication successful');
+        console.log('Authentication successful');
         return true;
       } else {
-        console.error('Auto-authentication failed: Invalid response structure');
+        console.error('Authentication failed: Invalid response structure');
         return false;
       }
     } catch (error) {
-      console.error('Auto-authentication error:', error.message);
+      console.error('Authentication error:', error.message);
       console.error('Auth failed with details:', {
         status: error.response?.status,
         data: error.response?.data
@@ -165,15 +183,19 @@ export class GloesimApiService {
       this.isAuthenticated = false;
       this.bearerToken = '';
       return false;
-    } finally {
-      this.isAuthenticating = false;
     }
   }
 
   // Manual login method (optional, for explicit authentication)
   async loginAsync(email, password) {
     this.setCredentials(email, password);
-    const success = await this.autoAuthenticate();
+    
+    // Reset authentication state to force new login
+    this.isAuthenticated = false;
+    this.bearerToken = '';
+    this.authenticationPromise = null;
+    
+    const success = await this.ensureAuthenticated();
     
     return {
       success,
@@ -195,15 +217,16 @@ export class GloesimApiService {
   clearBearerToken() {
     this.bearerToken = '';
     this.isAuthenticated = false;
+    this.authenticationPromise = null;
     console.log('Bearer token cleared');
   }
 
-  setEnvironment(useSandbox = true) {
+  setEnvironment(useSandbox = false) {
     if (this.useSandbox !== useSandbox) {
       // Clear authentication when switching environments
       this.bearerToken = '';
       this.isAuthenticated = false;
-      this.isAuthenticating = false;
+      this.authenticationPromise = null;
       
       this.useSandbox = useSandbox;
       this.baseUrl = useSandbox 
@@ -218,9 +241,7 @@ export class GloesimApiService {
     }
   }
 
-  // All your existing API methods remain the same, but without ensureAuthenticated() calls
-  // since authentication is now handled automatically in the interceptor
-
+  // API methods remain the same
   async getCountriesAsync() {
     try {
       console.log('Fetching countries...');
