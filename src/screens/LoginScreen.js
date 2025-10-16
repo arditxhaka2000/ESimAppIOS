@@ -89,19 +89,6 @@ const LoginScreen = ({ navigation, route }) => {
       if (result.success) {
         console.log('Login successful, navigating back...');
         
-        Alert.alert('Success', 'Login successful!', [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Navigate back to the previous screen or to Home
-              if (navigation.canGoBack()) {
-                navigation.goBack();
-              } else {
-                navigation.navigate('Main');
-              }
-            },
-          },
-        ]);
       } else {
         console.log('Login failed:', result.error);
         Alert.alert('Login Failed', result.error || 'Please check your credentials');
@@ -250,19 +237,6 @@ const LoginScreen = ({ navigation, route }) => {
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => {
-              if (navigation.canGoBack()) {
-                navigation.goBack();
-              } else {
-                navigation.navigate('Main');
-              }
-            }}
-          >
-            <Icon name="arrow-back" size={24} color="#dc2626" />
-          </TouchableOpacity>
-          
           <View style={styles.logoContainer}>
             <Text style={styles.logoNext}>Next</Text>
             <Text style={styles.logoESim}>eSim</Text>

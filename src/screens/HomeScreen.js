@@ -18,7 +18,7 @@ import CountriesModal from '../components/CountriesModal';
 import PaymentModal from '../components/PaymentModal';
 import ESimSuccessModal from '../screens/ESimSuccessModal';
 import { LinearGradient } from 'expo-linear-gradient';
-
+import SupportModal from '../components/SupportModal';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -52,6 +52,7 @@ const HomeScreen = ({ navigation }) => {
 
   const [searchText, setSearchText] = useState('');
   const [selectedTab, setSelectedTab] = useState('PAKO');
+  const [supportVisible, setSupportVisible] = useState(false);
   const [specialPackages, setSpecialPackages] = useState(globalPackages);
   const [countries, setCountries] = useState(globalCountries);
   const [continents, setContinents] = useState(globalContinents);
@@ -302,59 +303,59 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const renderPackageCard = (packageItem) => (
-  <LinearGradient
-    key={packageItem.id}
-    colors={['#EA384D', '#D31027']}
-    start={{ x: 0, y: 0 }}
-    end={{ x: 1, y: 0 }}
-    style={styles.packageCard}
-  >
-    <View style={styles.packageHeader}>
-      <Text style={styles.packageHeaderText}>Data</Text>
-      <Text style={styles.packageHeaderText}>Validity</Text>
-      <Text style={styles.packageHeaderText}>Connectivity</Text>
-    </View>
-
-    <View style={styles.packageValues}>
-      <Text style={styles.packageValue}>
-        {packageItem.data_quantity === -1 ? 'Unlimited' : `${packageItem.data_quantity}${packageItem.data_unit}`}
-      </Text>
-      <Text style={styles.packageValue}>{packageItem.package_validity} {packageItem.package_validity_unit}s</Text>
-      <Text style={styles.packageValue}>5G</Text>
-    </View>
-
-    <View style={styles.packageFeatures}>
-      <View style={styles.featureItem}>
-        <Text style={styles.featureLabel}>Tether / Hotspot</Text>
-        <Text style={styles.featureValue}>Yes</Text>
+    <LinearGradient
+      key={packageItem.id}
+      colors={['#EA384D', '#D31027']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={styles.packageCard}
+    >
+      <View style={styles.packageHeader}>
+        <Text style={styles.packageHeaderText}>Data</Text>
+        <Text style={styles.packageHeaderText}>Validity</Text>
+        <Text style={styles.packageHeaderText}>Connectivity</Text>
       </View>
 
-      <View style={styles.featureItem}>
-        <Text style={styles.featureLabel}>Coverage</Text>
-        <TouchableOpacity onPress={() => handleViewCoverage(packageItem)}>
-          <Text style={[styles.featureValue, styles.coverageLink]}>View</Text>
+      <View style={styles.packageValues}>
+        <Text style={styles.packageValue}>
+          {packageItem.data_quantity === -1 ? 'Unlimited' : `${packageItem.data_quantity}${packageItem.data_unit}`}
+        </Text>
+        <Text style={styles.packageValue}>{packageItem.package_validity} {packageItem.package_validity_unit}s</Text>
+        <Text style={styles.packageValue}>5G</Text>
+      </View>
+
+      <View style={styles.packageFeatures}>
+        <View style={styles.featureItem}>
+          <Text style={styles.featureLabel}>Tether / Hotspot</Text>
+          <Text style={styles.featureValue}>Yes</Text>
+        </View>
+
+        <View style={styles.featureItem}>
+          <Text style={styles.featureLabel}>Coverage</Text>
+          <TouchableOpacity onPress={() => handleViewCoverage(packageItem)}>
+            <Text style={[styles.featureValue, styles.coverageLink]}>View</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={[
+            styles.buyButton,
+            !isAuthenticated && styles.buyButtonDisabled
+          ]}
+          onPress={() => handlePackagePurchase(packageItem)}
+        >
+          <Text
+            style={[
+              styles.buyButtonText,
+              !isAuthenticated && styles.buyButtonTextDisabled
+            ]}
+          >
+            {!isAuthenticated ? 'Login to Buy' : `Buy - $${packageItem.display_price || packageItem.price}`}
+          </Text>
         </TouchableOpacity>
       </View>
-
-      <TouchableOpacity
-        style={[
-          styles.buyButton,
-          !isAuthenticated && styles.buyButtonDisabled
-        ]}
-        onPress={() => handlePackagePurchase(packageItem)}
-      >
-        <Text
-          style={[
-            styles.buyButtonText,
-            !isAuthenticated && styles.buyButtonTextDisabled
-          ]}
-        >
-          {!isAuthenticated ? 'Login to Buy' : `Buy - $${packageItem.display_price || packageItem.price}`}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  </LinearGradient>
-);
+    </LinearGradient>
+  );
 
 
   // Debug logging for state changes
@@ -451,12 +452,14 @@ const HomeScreen = ({ navigation }) => {
             resizeMode="contain"
           />
 
-          <TouchableOpacity style={styles.profileButton} onPress={handleProfile}>
-            <Text style={styles.profileIcon}>👤</Text>
-            <Text style={styles.profileText}>
-              {isAuthenticated ? userDisplayName : 'Kyçu'}
-            </Text>
+          <TouchableOpacity
+            style={styles.supportButton}
+            onPress={() => setSupportVisible(true)}
+          >
+            <Text style={styles.supportIcon}>💬</Text>
+            <Text style={styles.supportText}>Support</Text>
           </TouchableOpacity>
+
         </View>
 
         <View style={styles.searchContainer}>
@@ -534,6 +537,10 @@ const HomeScreen = ({ navigation }) => {
 
         {renderTabContent()}
       </ScrollView>
+      <SupportModal
+        visible={supportVisible}
+        onClose={() => setSupportVisible(false)}
+      />
 
       <CountriesModal
         visible={coverageModalVisible}
